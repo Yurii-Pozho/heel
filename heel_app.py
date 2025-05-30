@@ -176,7 +176,7 @@ with tabs[2]:
                 }, subset=pd.IndexSlice[:, 'Итого'])
                 st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
     else:
-        st.markdown(f"#### Джерело: {selected_source}")
+        st.markdown(f"#### {selected_source}")
         pivot_table = calculate_source_pivot(stocks_df, selected_source, selected_period, value_column=value_column)
         if pivot_table.empty:
             st.write("Дані відсутні.")
