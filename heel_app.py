@@ -22,9 +22,9 @@ st.markdown(
 )
 
 # Завантаження файлу
-uploaded_file = st.file_uploader("Завантажте файл Excel або CSV", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Загрузите файл Excel", type=["xlsx", "csv"])
 if not uploaded_file:
-    st.warning("Будь ласка, завантажте файл із даними.")
+    st.warning("Пожалуйста, загрузите файл с данными.")
     st.stop()
 
 # Перевірка типу файлу та аркушів
