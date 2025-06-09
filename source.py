@@ -6,7 +6,7 @@ month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'М
 
 def generate_source_pivots(df, selected_period=None):
     # Фільтруємо дані, виключаючи джерело 'Первичка минус'
-    filtered_df = df[df['источник'] != 'Первичка минус'].copy()
+    filtered_df = df[~df['источник'].isin(['Первичка минус', 'Первичка'])].copy()
     
     # Перетворюємо 'период' у категоріальний тип із правильним порядком
     filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)

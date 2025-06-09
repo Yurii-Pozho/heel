@@ -366,7 +366,7 @@ with tabs[5]:
 
 # Вкладка "Регионы"
 with tabs[6]:
-    st.markdown("### Сводная таблиця по регіонам")
+    st.markdown("### Сводная таблиця по регионам")
 
     # Вибір показника
     value_type = st.radio(
@@ -409,9 +409,6 @@ with tabs[6]:
         start_idx = period_labels.index(start_period)
         end_idx = period_labels.index(end_period)
         selected_period = period_labels[start_idx:end_idx + 1]
-
-    # Діагностика вибраного періоду
-    st.write(f"Вибраний період: {selected_period}")
 
     # Генерація зведеної таблиці
     try:
