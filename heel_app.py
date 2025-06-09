@@ -254,7 +254,7 @@ with tabs[3]:
 # Вкладка "Источники по периодам"
 with tabs[4]:
     st.markdown("### Сводная таблица: Кол-во по источнику и периоду")
-    filtered_df = sales_df[sales_df['источник'] != 'Первичка минус'].copy()
+    filtered_df = sales_df[~sales_df['источник'].isin(['Первичка минус', 'Первичка'])].copy()
     filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
     filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
     used_months = sorted(
