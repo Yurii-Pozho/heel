@@ -1,5 +1,5 @@
 import pandas as pd
-import plotly.express as px
+
 
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
@@ -75,24 +75,3 @@ def generate_source_pivots(df, selected_period=None):
     pivot_sum_by_source = pd.concat([pivot_sum_by_source, total_row_sum]).round(0)
     
     return pivot_qty_by_source, pivot_sum_by_source
-
-def plot_source_pie(pivot_sum_by_source):
-    # Використовуємо стовпець "Итого" для кругової діаграми
-    pie_data = pivot_sum_by_source['Итого'].drop('Итого')
-    pie_df = pie_data.reset_index()
-    pie_df.columns = ['источник', 'Сумма СИП']
-    
-    # Створюємо кругову діаграму
-    pie_chart = px.pie(
-        pie_df,
-        values='Сумма СИП',
-        names='источник',
-        hole=0.3
-    )
-    
-    pie_chart.update_layout(
-        width=600,
-        height=600
-    )
-    
-    return pie_chart

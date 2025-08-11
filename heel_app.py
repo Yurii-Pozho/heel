@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from eco_lec_sales import process_data
 from first_second_first import create_pivot_tables, month_order
-from source import generate_source_pivots, plot_source_pie
+from source import generate_source_pivots
 from region import generate_region_period_pivot
 from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
 from tashkent import generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
@@ -248,8 +248,6 @@ with tabs[3]:
     st.markdown("### Сумма")
     st.dataframe(styled_sum_no_filter, use_container_width=True, height=(len(pivot_sum_no_filter) + 1) * 35 + 3)
 
-    # st.markdown("### 📊 График: Сумма по месяцах (топ-5 препаратов) з подписями 'Количество'")
-    # st.plotly_chart(plot_top_items_no_filter(sales_df, used_months_no_filter, selected_period), use_container_width=True)
 
 # Вкладка "Источники по периодам"
 with tabs[4]:
@@ -306,9 +304,7 @@ with tabs[4]:
 
     st.dataframe(styled_sum_by_source, use_container_width=True, height=(len(pivot_sum_by_source) + 1) * 35 + 3)
 
-    st.markdown("### 📊 Круговая диаграма: Сумма СИП по источнику")
-    pie_chart = plot_source_pie(pivot_sum_by_source)
-    st.plotly_chart(pie_chart, use_container_width=True)
+
 
 # Вкладка "Eco Lec продажи"
 with tabs[5]:
