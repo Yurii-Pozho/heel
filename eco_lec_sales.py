@@ -1,5 +1,4 @@
 import pandas as pd
-import plotly.graph_objects as go
 
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
@@ -43,43 +42,43 @@ def process_data(df, selected_period=None):
 
     return filtered_df, pivot_qty, pivot_sum, used_months
 
-def plot_top_items(filtered_df, used_months, top_n=5):
-    top_items = (
-        filtered_df.groupby('Наименование товаров')['сумма']
-        .sum()
-        .sort_values(ascending=False)
-        .head(top_n)
-        .index
-    )
+# def plot_top_items(filtered_df, used_months, top_n=5):
+#     top_items = (
+#         filtered_df.groupby('Наименование товаров')['сумма']
+#         .sum()
+#         .sort_values(ascending=False)
+#         .head(top_n)
+#         .index
+#     )
 
-    top_df = filtered_df[filtered_df['Наименование товаров'].isin(top_items)].copy()
-    top_df['период'] = pd.Categorical(top_df['период'], categories=used_months, ordered=True)
+#     top_df = filtered_df[filtered_df['Наименование товаров'].isin(top_items)].copy()
+#     top_df['период'] = pd.Categorical(top_df['период'], categories=used_months, ordered=True)
 
-    grouped = top_df.groupby(['период', 'Наименование товаров']).agg({
-        'сумма': 'sum',
-        'кол-во': 'sum'
-    }).reset_index()
+#     grouped = top_df.groupby(['период', 'Наименование товаров']).agg({
+#         'сумма': 'sum',
+#         'кол-во': 'sum'
+#     }).reset_index()
 
-    fig = go.Figure()
-    for name in top_items:
-        product_data = grouped[grouped['Наименование товаров'] == name]
-        fig.add_trace(go.Bar(
-            x=product_data['период'],
-            y=product_data['сумма'],
-            name=name,
-            text=product_data['кол-во'],
-            textposition='outside',
-            textangle=-90,
-            textfont=dict(size=12),
-        ))
+    # fig = go.Figure()
+    # for name in top_items:
+    #     product_data = grouped[grouped['Наименование товаров'] == name]
+    #     fig.add_trace(go.Bar(
+    #         x=product_data['период'],
+    #         y=product_data['сумма'],
+    #         name=name,
+    #         text=product_data['кол-во'],
+    #         textposition='outside',
+    #         textangle=-90,
+    #         textfont=dict(size=12),
+    #     ))
 
-    fig.update_layout(
-        barmode='group',
-        xaxis_title="Місяць",
-        yaxis_title="Сума",
-        xaxis=dict(categoryorder='array', categoryarray=used_months),
-        legend_title="Товари",
-        uniformtext_minsize=8,
-        uniformtext_mode='hide',
-    )
-    return fig
+    # fig.update_layout(
+    #     barmode='group',
+    #     xaxis_title="Місяць",
+    #     yaxis_title="Сума",
+    #     xaxis=dict(categoryorder='array', categoryarray=used_months),
+    #     legend_title="Товари",
+    #     uniformtext_minsize=8,
+    #     uniformtext_mode='hide',
+    # )
+    # return fig
