@@ -1,5 +1,5 @@
 import pandas as pd
-import plotly.graph_objects as go
+
 
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
@@ -69,58 +69,3 @@ def create_pivot_tables(df, selected_period=None):
     
     return pivot_qty, pivot_sum, used_months
 
-def plot_top_items_no_filter(df, used_months, selected_period=None, top_n=5):
-    filtered_df = df.copy()
-    
-    # Фільтрація за вибраним діапазоном періодів
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Визначаємо топ-5 товарів за сумою СИП у вибраний період
-    top_items = (
-        filtered_df.groupby('Наименование товаров')['Сумма СИП']
-        .sum()
-        .sort_values(ascending=False)
-        .head(top_n)
-        .index
-    )
-    
-    # Фільтруємо дані для топ-5 товарів
-    top_df = filtered_df[filtered_df['Наименование товаров'].isin(top_items)].copy()
-    top_df['период'] = pd.Categorical(top_df['период'], categories=used_months, ordered=True)
-    
-    # Групуємо дані за періодом і товаром
-    grouped = top_df.groupby(['период', 'Наименование товаров']).agg({
-        'Сумма СИП': 'sum',
-        'кол-во': 'sum'
-    }).reset_index()
-    
-    # Перетворюємо 'кол-во' в цілі числа для підписів
-    grouped['кол-во'] = grouped['кол-во'].astype(int)
-    
-    # Створюємо графік
-    fig = go.Figure()
-    for name in top_items:
-        product_data = grouped[grouped['Наименование товаров'] == name]
-        fig.add_trace(go.Scatter(
-            x=product_data['период'],
-            y=product_data['Сумма СИП'],
-            mode='lines+markers+text',
-            name=name,
-            text=product_data['кол-во'],
-            textposition='top center',
-            textfont=dict(size=12),
-        ))
-    
-    fig.update_layout(
-        xaxis_title="Місяць",
-        yaxis_title="Сума СИП",
-        xaxis=dict(categoryorder='array', categoryarray=used_months),
-        legend_title="Товари",
-        uniformtext_minsize=8,
-        uniformtext_mode='hide',
-    )
-    return fig

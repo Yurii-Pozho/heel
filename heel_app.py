@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from eco_lec_sales import process_data
-from first_second_first import create_pivot_tables, plot_top_items_no_filter, month_order
+from first_second_first import create_pivot_tables, month_order
 from source import generate_source_pivots, plot_source_pie
 from region import generate_region_period_pivot
 from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
