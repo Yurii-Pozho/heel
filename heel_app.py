@@ -639,7 +639,7 @@ with tabs[9]:
 
     value_column = 'кол-во' if value_type == "Количество" else 'Сумма СИП'
 
-    exclude_list = ['Нилуфар', 'вакант Самарканд']
+    exclude_list = ['вакант Кашкадарья', 'вакант Самарканд']
     mp_pivots = {}
 
     if selected_mp == "Все МП":
