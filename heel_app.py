@@ -8,14 +8,7 @@ from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
 from tashkent import generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
 from tashkent_oblast import generate_other_districts_divided_pivot, generate_other_districts_pivot
 from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot
-from mp import (
-    FOCUS_MANAGERS_AND_DISTRICTS, 
-    is_excluded,
-    is_focus_manager,           # <-- НОВИЙ ІМПОРТ ФУНКЦІЇ ПЕРЕВІРКИ
-    calculate_excluded_mp_pivot, 
-    calculate_mp_pivot_with_bonus, 
-    calculate_focus_mp_pivot,      
-)
+from mp import FOCUS_MANAGERS_AND_DISTRICTS, is_excluded,is_focus_manager,calculate_excluded_mp_pivot, calculate_mp_pivot_with_bonus,calculate_focus_mp_pivot
 from stocks import calculate_source_pivot
 from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
 import seaborn as sns
