@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from eco_lec_sales import process_data
-from first_second_first import create_pivot_by_group
+# from first_second_first import create_pivot_by_group
 from source import generate_source_pivots
 from region import generate_region_period_pivot
 from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
@@ -195,64 +195,64 @@ with tabs[2]:
             st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)        
 
 # Вкладка "Первичка + вторичка - первичка"
-with tabs[3]:
-    # === слайдер (залишаємо як є) ===
-    temp_df = sales_df.copy()
-    temp_df['период'] = pd.Categorical(temp_df['период'], categories=month_order, ordered=True)
-    temp_df['кол-во'] = pd.to_numeric(temp_df['кол-во'], errors='coerce').fillna(0)
+# with tabs[3]:
+#     # === слайдер (залишаємо як є) ===
+#     temp_df = sales_df.copy()
+#     temp_df['период'] = pd.Categorical(temp_df['период'], categories=month_order, ordered=True)
+#     temp_df['кол-во'] = pd.to_numeric(temp_df['кол-во'], errors='coerce').fillna(0)
 
-    used_months_all = sorted(
-        temp_df[temp_df['кол-во'] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
-    )
-    period_labels = ['Все'] + used_months_all
+#     used_months_all = sorted(
+#         temp_df[temp_df['кол-во'] > 0]['период'].dropna().unique(),
+#         key=lambda x: month_order.index(x)
+#     )
+#     period_labels = ['Все'] + used_months_all
 
-    period_range = st.select_slider(
-        "Выберите диапазон дат",
-        options=period_labels,
-        value=(period_labels[0], period_labels[-1]),
-        key="items_period_slider"
-    )
-    start_period, end_period = period_range
-    selected_period = None if start_period == 'Все' else period_labels[
-        period_labels.index(start_period): period_labels.index(end_period) + 1
-    ]
+#     period_range = st.select_slider(
+#         "Выберите диапазон дат",
+#         options=period_labels,
+#         value=(period_labels[0], period_labels[-1]),
+#         key="items_period_slider"
+#     )
+#     start_period, end_period = period_range
+#     selected_period = None if start_period == 'Все' else period_labels[
+#         period_labels.index(start_period): period_labels.index(end_period) + 1
+#     ]
 
-    # === отримуємо всі чотири таблиці одним викликом ===
-    qty_bad, sum_bad, qty_lek, sum_lek, _ = create_pivot_by_group(sales_df, selected_period)
+#     # === отримуємо всі чотири таблиці одним викликом ===
+#     qty_bad, sum_bad, qty_lek, sum_lek, _ = create_pivot_by_group(sales_df, selected_period)
 
-    # === стилізація (та сама, що в тебе була) ===
-    def styled(df):
-        return df.style.format("{:,.0f}", na_rep='').set_properties(**{
-            'text-align': 'right',
-            'font-size': '14px'
-        }).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice[:, 'Итого'])
+#     # === стилізація (та сама, що в тебе була) ===
+#     def styled(df):
+#         return df.style.format("{:,.0f}", na_rep='').set_properties(**{
+#             'text-align': 'right',
+#             'font-size': '14px'
+#         }).set_properties(**{
+#             'font-weight': 'bold',
+#             'background-color': '#f0f0f0'
+#         }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
+#             'font-weight': 'bold',
+#             'background-color': '#f0f0f0'
+#         }, subset=pd.IndexSlice[:, 'Итого'])
 
-    # ====================== БАДЫ ======================
-    st.markdown("### БАДЫ")
+#     # ====================== БАДЫ ======================
+#     st.markdown("### БАДЫ")
 
-    st.markdown("**Количество**")
-    st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
+#     st.markdown("**Количество**")
+#     st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
 
-    st.markdown("**Сумма СИП**")
-    st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
+#     st.markdown("**Сумма СИП**")
+#     st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
 
-    st.markdown("---")
+#     st.markdown("---")
 
-    # ====================== ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ======================
-    st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
+#     # ====================== ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ======================
+#     st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
 
-    st.markdown("**Количество**")
-    st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
+#     st.markdown("**Количество**")
+#     st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
 
-    st.markdown("**Сумма СИП**")
-    st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
+#     st.markdown("**Сумма СИП**")
+#     st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
 
 # Вкладка "Источники по периодам"
 with tabs[4]:
