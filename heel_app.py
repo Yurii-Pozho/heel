@@ -8,7 +8,14 @@ from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
 from tashkent import generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
 from tashkent_oblast import generate_other_districts_divided_pivot, generate_other_districts_pivot
 from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot
-from mp import calculate_excluded_mp_pivot, calculate_mp_pivot_with_tashkent
+from mp import (
+    FOCUS_MANAGERS_AND_DISTRICTS, 
+    is_excluded,
+    is_focus_manager,           # <-- НОВИЙ ІМПОРТ ФУНКЦІЇ ПЕРЕВІРКИ
+    calculate_excluded_mp_pivot, 
+    calculate_mp_pivot_with_bonus, 
+    calculate_focus_mp_pivot,      
+)
 from stocks import calculate_source_pivot
 from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
 import seaborn as sns
@@ -617,94 +624,81 @@ with tabs[8]:
     st.dataframe(styled_other_districts_sum_sip_divided, use_container_width=True, height=(len(pivot_other_districts_sum_sip_divided) + 1) * 35 + 3)
 
 # Вкладка "МП общее"
-with tabs[9]: 
+
+def get_mp_sort_key(mp_name):
+    if is_focus_manager(mp_name):
+        return 2
+    
+    if is_excluded(mp_name):
+        if 'бады' in str(mp_name).lower():
+            return 2
+        else:
+            return 3
+            
+    else:
+        return 1
+
+with tabs[9]:
     st.markdown("### Сводная таблица по МП")
-    filtered_df = sales_df.copy()
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
+    
+    used_months = sorted(sales_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
     period_labels = ['Все'] + used_months
 
-    period_range = st.select_slider(
-        "Выберите диапазон дат",
-        options=period_labels,
-        value=(period_labels[0], period_labels[-1]),
-        key="mp_period_slider"
-    )
-    start_period, end_period = period_range
-    if start_period == 'Все':
-        selected_period = None
-    else:
-        start_idx = period_labels.index(start_period)
-        end_idx = period_labels.index(end_period)
-        selected_period = period_labels[start_idx:end_idx + 1]
+    period_range = st.select_slider("Диапазон", options=period_labels, value=('Все', period_labels[-1]))
+    start, end = period_range
+    selected_period = None if start == 'Все' else period_labels[period_labels.index(start):period_labels.index(end)+1]
 
-    mp_list = sales_df['МП'].dropna().unique().tolist()
-    mp_list.sort()
-    mp_list.insert(0, "Все МП")
+    mp_options = set(sales_df['МП'].dropna().unique().tolist()) | set(FOCUS_MANAGERS_AND_DISTRICTS.keys())
+    mp_list = ['Все МП'] + sorted(list(mp_options))
+    selected_mp = st.selectbox("Выберите МП", mp_list)
 
-    selected_mp = st.selectbox(
-        "Выберите МП",
-        options=mp_list,
-        key="mp_selectbox"
-    )
-
-    value_type = st.radio(
-        "Выберите показатель",
-        options=["Количество", "Сумма СИП"],
-        key="value_type_radio"
-    )
-
-    value_column = 'кол-во' if value_type == "Количество" else 'Сумма СИП'
-
-    mp_pivots = {}
+    value_column = 'кол-во' if st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True) == "Количество" else 'Сумма СИП'
 
     if selected_mp == "Все МП":
-        for mp in mp_list[1:]:
-            # Перевіряємо, чи є слово "вакант" у назві МП
-            if 'вакант' in mp.lower():
-                mp_pivots[mp] = calculate_excluded_mp_pivot(sales_df, mp, selected_period, value_column=value_column)
+        
+        all_mps_to_show = sorted(mp_list[1:], key=lambda mp: (get_mp_sort_key(mp), mp))
+        
+        for mp in all_mps_to_show:
+            st.markdown(f"#### {mp}")
+            
+            if is_focus_manager(mp):
+                table = calculate_focus_mp_pivot(sales_df, mp, selected_period, value_column)
+            elif is_excluded(mp):
+                table = calculate_excluded_mp_pivot(sales_df, mp, selected_period, value_column) 
             else:
-                mp_pivots[mp] = calculate_mp_pivot_with_tashkent(sales_df, mp, selected_period, value_column=value_column)
-
-        for mp_name, pivot_table in mp_pivots.items():
-            st.markdown(f"#### {mp_name}")
-            if pivot_table.empty:
-                st.write("Дані відсутні.")
+                table = calculate_mp_pivot_with_bonus(sales_df, mp, selected_period, value_column)
+            
+            if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table['Итого'].sum() == 0):
+                st.caption("— нет данных —")
             else:
-                styled_table = pivot_table.style.format("{:,.0f}", na_rep='').set_properties(**{
-                    'text-align': 'right',
-                    'font-size': '14px'
-                }).set_properties(**{
-                    'font-weight': 'bold',
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-                    'font-weight': 'bold',
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice[:, 'Итого'])
-                st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
+                table_height = (len(table) + 1) * 35 
+                
+                st.dataframe(table.style.format("{:,.0f}")
+                             .set_properties(**{'text-align': 'right'})
+                             .set_properties(**{'font-weight': 'bold', 'background-color': '#f0f0f0'}, subset='Итого'),
+                             use_container_width=True, 
+                             height=table_height)
+                             
     else:
-        # Перевіряємо, чи є слово "вакант" у назві МП
-        if 'вакант' in selected_mp.lower():
-            pivot_table = calculate_excluded_mp_pivot(sales_df, selected_mp, selected_period, value_column=value_column)
+        st.markdown(f"### {selected_mp}")
+        
+        if is_focus_manager(selected_mp):
+            table = calculate_focus_mp_pivot(sales_df, selected_mp, selected_period, value_column)
+        elif is_excluded(selected_mp):
+            table = calculate_excluded_mp_pivot(sales_df, selected_mp, selected_period, value_column)
         else:
-            pivot_table = calculate_mp_pivot_with_tashkent(sales_df, selected_mp, selected_period, value_column=value_column)
-
-        st.markdown(f"#### МП: {selected_mp}")
-        if pivot_table.empty:
-            st.write("Дані відсутні.")
+            table = calculate_mp_pivot_with_bonus(sales_df, selected_mp, selected_period, value_column)
+        
+        if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table['Итого'].sum() == 0):
+            st.caption("— нет данных —")
         else:
-            styled_table = pivot_table.style.format("{:,.0f}", na_rep='').set_properties(**{
-                'text-align': 'right',
-                'font-size': '14px'
-            }).set_properties(**{
-                'font-weight': 'bold',
-                'background-color': '#f0f0f0'
-            }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-                'font-weight': 'bold',
-                'background-color': '#f0f0f0'
-            }, subset=pd.IndexSlice[:, 'Итого'])
-            st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
-
+            table_height = (len(table) + 1) * 35
+            
+            st.dataframe(table.style.format("{:,.0f}")
+                         .set_properties(**{'text-align': 'right'})
+                         .set_properties(**{'font-weight': 'bold', 'background-color': '#f0f0f0'}, subset='Итого'),
+                         use_container_width=True,
+                         height=table_height) 
 with tabs[10]:
     st.markdown("### Тепловая карта по районам")
     

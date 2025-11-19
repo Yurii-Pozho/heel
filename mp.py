@@ -1,153 +1,176 @@
 import pandas as pd
+import numpy as np
+
+# ────────────────────── КОНСТАНТИ ──────────────────────
 
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 
-# Функція для МП з словом "вакант" (без урахування районів)
-def calculate_excluded_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во'):
-    required_columns = ['Наименование товаров', 'период', 'МП', value_column]
-    if not all(col in df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    df['период'] = pd.Categorical(df['период'], categories=month_order, ordered=True)
-    
-    filtered_df = df.copy()
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
-    
-    # ТІЛЬКИ ті записи, де МП == mp_name
-    mp_subset = filtered_df[filtered_df['МП'] == mp_name]
-    
-    if mp_subset.empty:
-        return pd.DataFrame()
-    
-    # Визначаємо місяці, які реально є в даних
-    used_months = sorted(mp_subset['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    
-    # Формуємо зведену таблицю без автоматичного "Итого"
-    pivot_table = pd.pivot_table(
-        mp_subset,
-        index='Наименование товаров',
-        columns='период',
-        values=value_column,
-        aggfunc='sum',
-        fill_value=0,
-        margins=False
-    )
-    
-    # Сортуємо стовпці за наявними місяцями
-    pivot_table = pivot_table.reindex(columns=used_months)
-    
-    # Додаємо "Итого" вручну
-    pivot_table['Итого'] = pivot_table.sum(axis=1).round(0)
-    total_row = pivot_table.sum(axis=0).to_frame().T
-    total_row.index = ['Итого']
-    pivot_table = pd.concat([pivot_table, total_row])
-    
-    return pivot_table
+# 1. ЛІКИ: Препарати, що підлягають бонусній логіці (Ташкент + Область /4)
+PHARMACEUTICALS = [
+    'Вибуркол супп рект № 12', 'Дискус композитум р-р для инъекций 2,2 мл № 5', 
+    'Лимфомиозот амп 1,1 мл № 5', 'Лимфомиозот капли 30мл', 'Ньюрексан таблетки № 25', 
+    'Ньюрексан таблетки № 50', 'Траумель С амп 2,2 мл № 5', 'Траумель С мазь 50г', 
+    'Траумель С р-р для инъекций 2,2 мл № 100', 'Траумель С таблетки № 50', 
+    'Цель Т амп 2 мл № 100', 'Цель Т амп № 5', 'Цель Т мазь 50г', 'Цель Т таблетки № 50', 
+    'Церебрум композитум р-р д/инъек 2,2мл №10', 'Энгистол таблетки № 50',
+]
+
+# 2. БАДИ: 3 Фокусні препарати для нових менеджерів (ФІО)
+SUPPLEMENTS_FOR_MP_BONUS = [
+    'Витрум ретинорм капс. №90',
+    'Ксефомиелин таб. №30',
+    'Синулан Форте таб. №30'
+]
+
+# Райони Ташкентської області (для бонусу)
+TASHKENT_OBLAST_DISTRICTS = [
+    'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
+    'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
+    'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
+]
+
+# Словник "МП": [Список районів] для нових фокусних менеджерів
+FOCUS_MANAGERS_AND_DISTRICTS = {
+    'Мирзаева Гавхар Абдуразаковна': ['Мирабадский', 'Мирзо-Улугбекский'],
+    'Исмоилова Нозима Зокиржон кизи': ['Чиланзарский', 'Яшнабадский', 'Яккасарайский'],
+    'Файзиева Дильфуза Дилшод кизи': ['Шайхантахурский', 'Алмазарский', 'Сергелийский'],
+    'Нурутдинова Эвилина': ['Учтепинский', 'Юнусабадский']
+}
 
 
-# Функція для всіх інших МП (без слова "вакант" - з додаванням Ташкент і Ташкент область)
-def calculate_mp_pivot_with_tashkent(df, mp_name, selected_period=None, value_column='кол-во'):
-    required_columns = ['Наименование товаров', 'период', 'МП', 'район', value_column]
-    if not all(col in df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    df['период'] = pd.Categorical(df['период'], categories=month_order, ordered=True)
-    
-    filtered_df = df.copy()
+# ────────────────────── ФУНКЦІЇ КЛАСИФІКАЦІЇ ──────────────────────
+
+def is_excluded(mp_name):
+    """Визначає, чи є МП 'вакант' або 'бады'."""
+    return 'вакант' in str(mp_name).lower() or 'бады' in str(mp_name).lower()
+
+def is_focus_manager(mp_name):
+    """Визначає, чи є МП новим фокусним менеджером (за ФІО)."""
+    return mp_name in FOCUS_MANAGERS_AND_DISTRICTS
+
+# ────────────────────── ФУНКЦІЇ РОЗРАХУНКУ ──────────────────────
+
+def calculate_excluded_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во', focus_products=None):
+    """Розрахунок для 'вакант' / 'бады'. Показує ВСІ продукти."""
+    filtered = df[df['МП'] == mp_name].copy()
+
     if selected_period:
         if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
+            filtered = filtered[filtered['период'].isin(selected_period)]
         else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
+            filtered = filtered[filtered['период'] == selected_period]
     
-    filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
+    filtered[value_column] = pd.to_numeric(filtered[value_column], errors='coerce').fillna(0)
+    if filtered.empty: return pd.DataFrame()
     
-    # ТІЛЬКИ ті записи, де МП == mp_name
-    mp_data = filtered_df[filtered_df['МП'] == mp_name].copy()
-    if mp_data.empty:
+    used_months = sorted(filtered['период'].unique(), key=lambda x: month_order.index(x))
+    pivot = pd.pivot_table(filtered, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
+    
+    if pivot.empty: return pd.DataFrame()
+    pivot = pivot.reindex(columns=used_months)
+    pivot['Итого'] = pivot.sum(axis=1)
+    total_row = pd.DataFrame(pivot.sum()).T
+    total_row.index = ['Итого']
+    return pd.concat([pivot, total_row]).astype(int)
+
+def calculate_mp_pivot_with_bonus(df, mp_name, selected_period=None, value_column='кол-во'):
+    """
+    Розрахунок для стандартних МП.
+    !!! ІГНОРУЄ фокусних ФІО-менеджерів, щоб уникнути дублювання !!!
+    """
+    if mp_name in FOCUS_MANAGERS_AND_DISTRICTS:
         return pd.DataFrame()
     
-    # Визначаємо місяці, коли МП реально працювало (є записи в даних)
-    mp_active_months = mp_data['период'].dropna().unique().tolist()
+    filtered = df.copy()
+    if selected_period:
+        if isinstance(selected_period, list):
+            filtered = filtered[filtered['период'].isin(selected_period)]
+        else:
+            filtered = filtered[filtered['период'] == selected_period]
     
-    # Групуємо дані для МП
-    mp_grouped = mp_data.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
+    filtered[value_column] = pd.to_numeric(filtered[value_column], errors='coerce').fillna(0)
+    direct = filtered[filtered['МП'] == mp_name]
     
-    # Додаємо дані для "Ташкент"/4 ТІЛЬКИ для місяців, коли МП працювало
-    tashkent_data = filtered_df[
-        (filtered_df['район'] == 'Ташкент') & 
-        (filtered_df['период'].isin(mp_active_months))
+    # ... (логіка бонусу Ташкент/Область, не змінюємо) ...
+    active_months = direct['период'].dropna().unique()
+    tashkent_bonus = filtered[
+        (filtered['район'] == 'Ташкент') & (filtered['период'].isin(active_months)) &
+        (filtered['Наименование товаров'].isin(PHARMACEUTICALS))
     ].copy()
-    if not tashkent_data.empty:
-        tashkent_grouped = tashkent_data.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
-        tashkent_grouped[value_column] = tashkent_grouped[value_column] / 4
-    else:
-        tashkent_grouped = pd.DataFrame(columns=['Наименование товаров', 'период', value_column])
+    if not tashkent_bonus.empty:
+        tashkent_bonus = tashkent_bonus.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
+        tashkent_bonus[value_column] = (tashkent_bonus[value_column] / 4).round(0)
     
-    # Додаємо дані для районів "Ташкент область"/4 ТІЛЬКИ для місяців, коли МП працювало
-    tashkent_oblast_districts = [
-        'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
-        'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
-        'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
-    ]
-    tashkent_oblast_data = filtered_df[
-        (filtered_df['район'].isin(tashkent_oblast_districts)) & 
-        (filtered_df['период'].isin(mp_active_months))
+    oblast_bonus = filtered[
+        (filtered['район'].isin(TASHKENT_OBLAST_DISTRICTS)) & (filtered['период'].isin(active_months)) &
+        (filtered['Наименование товаров'].isin(PHARMACEUTICALS))
     ].copy()
-    if not tashkent_oblast_data.empty:
-        tashkent_oblast_grouped = tashkent_oblast_data.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
-        tashkent_oblast_grouped[value_column] = tashkent_oblast_grouped[value_column] / 4
-    else:
-        tashkent_oblast_grouped = pd.DataFrame(columns=['Наименование товаров', 'период', value_column])
+    if not oblast_bonus.empty:
+        oblast_bonus = oblast_bonus.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
+        oblast_bonus[value_column] = (oblast_bonus[value_column] / 4).round(0)
     
-    # Об'єднуємо всі дані
-    result = mp_grouped.copy()
+    result = direct.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
+    for bonus_df in [tashkent_bonus, oblast_bonus]:
+        if not bonus_df.empty:
+            result = result.merge(bonus_df, on=['Наименование товаров', 'период'], how='outer', suffixes=('', '_bonus'))
+            result[value_column] = result[value_column].fillna(0) + result[f'{value_column}_bonus'].fillna(0)
+            result = result.drop(columns=[c for c in result.columns if c.endswith('_bonus')], errors='ignore')
     
-    if not tashkent_grouped.empty:
-        result = result.merge(tashkent_grouped, on=['Наименование товаров', 'период'], how='outer', suffixes=('', '_tashkent'))
-        result[value_column] = result[value_column].fillna(0) + result[f'{value_column}_tashkent'].fillna(0)
-        result = result.drop(columns=[f'{value_column}_tashkent'])
-    
-    if not tashkent_oblast_grouped.empty:
-        result = result.merge(tashkent_oblast_grouped, on=['Наименование товаров', 'период'], how='outer', suffixes=('', '_tashkent_oblast'))
-        result[value_column] = result[value_column].fillna(0) + result[f'{value_column}_tashkent_oblast'].fillna(0)
-        result = result.drop(columns=[f'{value_column}_tashkent_oblast'])
-    
-    result[value_column] = result[value_column].round(0)
-    
-    # Визначаємо місяці, які реально є в даних (лише з ненульовими значеннями)
-    used_months = sorted(
-        result[result[value_column] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
-    )
-    
-    # Формуємо зведену таблицю без автоматичного "Итого"
-    pivot_table = pd.pivot_table(
-        result,
-        index='Наименование товаров',
-        columns='период',
-        values=value_column,
-        aggfunc='sum',
-        fill_value=0,
-        margins=False
-    )
-    
-    # Сортуємо стовпці за наявними місяцями
-    pivot_table = pivot_table.reindex(columns=used_months)
-    
-    # Додаємо "Итого" вручну
-    pivot_table['Итого'] = pivot_table.sum(axis=1).round(0)
-    total_row = pivot_table.sum(axis=0).to_frame().T
+    result[value_column] = result[value_column].round(0).astype(int)
+    if result.empty: return pd.DataFrame()
+    used_months = sorted(result['период'].unique(), key=lambda x: month_order.index(x))
+    pivot = pd.pivot_table(result, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
+    pivot = pivot.reindex(columns=used_months)
+    pivot['Итого'] = pivot.sum(axis=1)
+    total_row = pd.DataFrame(pivot.sum()).T
     total_row.index = ['Итого']
-    pivot_table = pd.concat([pivot_table, total_row])
+    return pd.concat([pivot, total_row])
+
+
+def calculate_focus_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во'):
+    """Розрахунок для нових фокусних МП (ФІО) за 3 БАДами та їхніми районами."""
     
-    return pivot_table
+    target_districts = FOCUS_MANAGERS_AND_DISTRICTS.get(mp_name, [])
+    target_products = SUPPLEMENTS_FOR_MP_BONUS 
+    
+    if not target_districts:
+        return pd.DataFrame()
+
+    filtered = df[
+        (df['МП'] == mp_name) & # Фільтруємо лише по цьому МП
+        (df['район'].isin(target_districts)) & 
+        (df['Наименование товаров'].isin(target_products))
+    ].copy()
+
+    if selected_period:
+        if isinstance(selected_period, list):
+            filtered = filtered[filtered['период'].isin(selected_period)]
+        else:
+            filtered = filtered[filtered['период'] == selected_period]
+
+    filtered[value_column] = pd.to_numeric(filtered[value_column], errors='coerce').fillna(0)
+    
+    # ... (логіка зведеної таблиці) ...
+    if filtered.empty:
+        unique_periods = df['период'].dropna().unique()
+        # Якщо даних немає, створюємо порожню таблицю з потрібними назвами товарів
+        cols = sorted(unique_periods, key=lambda x: month_order.index(x)) if unique_periods.size > 0 else ['Январь']
+        empty_pivot = pd.DataFrame(0, index=target_products, columns=cols)
+        empty_pivot['Итого'] = 0
+        total_row = pd.DataFrame(empty_pivot.sum()).T
+        total_row.index = ['Итого']
+        return pd.concat([empty_pivot, total_row]).astype(int)
+
+    used_months = sorted(filtered['период'].unique(), key=lambda x: month_order.index(x))
+    pivot = pd.pivot_table(filtered, index='Наименование товаров', columns='период',
+                           values=value_column, aggfunc='sum', fill_value=0)
+    
+    pivot = pivot.reindex(columns=used_months)
+    pivot['Итого'] = pivot.sum(axis=1)
+    pivot = pivot.reindex(target_products).fillna(0)
+    
+    total_row = pd.DataFrame(pivot.sum()).T
+    total_row.index = ['Итого']
+    
+    return pd.concat([pivot, total_row]).astype(int)
