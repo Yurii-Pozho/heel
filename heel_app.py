@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from eco_lec_sales import process_data
-from first_second_first import create_pivot_tables, month_order
+from first_second_first import create_pivot_by_group
 from source import generate_source_pivots
 from region import generate_region_period_pivot
 from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
@@ -10,6 +10,7 @@ from tashkent_oblast import generate_other_districts_divided_pivot, generate_oth
 from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot
 from mp import calculate_excluded_mp_pivot, calculate_mp_pivot_with_tashkent
 from stocks import calculate_source_pivot
+from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
 import seaborn as sns
 import matplotlib.pyplot as plt
 import io
@@ -195,14 +196,16 @@ with tabs[2]:
 
 # Вкладка "Первичка + вторичка - первичка"
 with tabs[3]:
-    filtered_df = sales_df.copy()
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
-    used_months = sorted(
-        filtered_df[filtered_df['кол-во'] > 0]['период'].dropna().unique(),
+    # === слайдер (залишаємо як є) ===
+    temp_df = sales_df.copy()
+    temp_df['период'] = pd.Categorical(temp_df['период'], categories=month_order, ordered=True)
+    temp_df['кол-во'] = pd.to_numeric(temp_df['кол-во'], errors='coerce').fillna(0)
+
+    used_months_all = sorted(
+        temp_df[temp_df['кол-во'] > 0]['период'].dropna().unique(),
         key=lambda x: month_order.index(x)
     )
-    period_labels = ['Все'] + used_months
+    period_labels = ['Все'] + used_months_all
 
     period_range = st.select_slider(
         "Выберите диапазон дат",
@@ -211,43 +214,45 @@ with tabs[3]:
         key="items_period_slider"
     )
     start_period, end_period = period_range
-    if start_period == 'Все':
-        selected_period = None
-    else:
-        start_idx = period_labels.index(start_period)
-        end_idx = period_labels.index(end_period)
-        selected_period = period_labels[start_idx:end_idx + 1]
+    selected_period = None if start_period == 'Все' else period_labels[
+        period_labels.index(start_period): period_labels.index(end_period) + 1
+    ]
 
-    pivot_qty_no_filter, pivot_sum_no_filter, used_months_no_filter = create_pivot_tables(sales_df, selected_period)
+    # === отримуємо всі чотири таблиці одним викликом ===
+    qty_bad, sum_bad, qty_lek, sum_lek, _ = create_pivot_by_group(sales_df, selected_period)
 
-    styled_qty_no_filter = pivot_qty_no_filter.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    # === стилізація (та сама, що в тебе була) ===
+    def styled(df):
+        return df.style.format("{:,.0f}", na_rep='').set_properties(**{
+            'text-align': 'right',
+            'font-size': '14px'
+        }).set_properties(**{
+            'font-weight': 'bold',
+            'background-color': '#f0f0f0'
+        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
+            'font-weight': 'bold',
+            'background-color': '#f0f0f0'
+        }, subset=pd.IndexSlice[:, 'Итого'])
 
-    styled_sum_no_filter = pivot_sum_no_filter.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    # ====================== БАДЫ ======================
+    st.markdown("### БАДЫ")
 
-    st.markdown("### Количество")
-    st.dataframe(styled_qty_no_filter, use_container_width=True, height=(len(pivot_qty_no_filter) + 1) * 35 + 3)
+    st.markdown("**Количество**")
+    st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
 
-    st.markdown("### Сумма")
-    st.dataframe(styled_sum_no_filter, use_container_width=True, height=(len(pivot_sum_no_filter) + 1) * 35 + 3)
+    st.markdown("**Сумма СИП**")
+    st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
 
+    st.markdown("---")
+
+    # ====================== ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ======================
+    st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
+
+    st.markdown("**Количество**")
+    st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
+
+    st.markdown("**Сумма СИП**")
+    st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
 
 # Вкладка "Источники по периодам"
 with tabs[4]:
@@ -304,30 +309,39 @@ with tabs[4]:
 
     st.dataframe(styled_sum_by_source, use_container_width=True, height=(len(pivot_sum_by_source) + 1) * 35 + 3)
 
-
-
 # Вкладка "Eco Lec продажи"
 with tabs[5]:
     st.markdown("### Сводная таблица и график по 'Первичка'")
+
+    # === Твій слайдер — без змін ===
     period_labels = ['Все'] + month_order
     period_range = st.select_slider(
         "Выберите диапазон дат",
         options=period_labels,
         value=(period_labels[0], period_labels[-1]),
-        key="period_slider_tab1"
+        key="period_slider_tab5"
     )
     start_period, end_period = period_range
-    if start_period == 'Все':
-        selected_period = None
-    else:
-        start_idx = period_labels.index(start_period)
-        end_idx = period_labels.index(end_period)
-        selected_period = period_labels[start_idx:end_idx + 1]
+    selected_period = None if start_period == 'Все' else period_labels[
+        period_labels.index(start_period): period_labels.index(end_period) + 1
+    ]
 
-    filtered_df, pivot_qty, pivot_sum, used_months = process_data(sales_df, selected_period)
+    # === Викликаємо ТВОЮ функцію двічі — для БАДів і Ліків ===
+    # БАДи
+    _, qty_bad, sum_bad, _ = process_data(
+        sales_df[sales_df['Наименование товаров'].isin(БАДЫ)], selected_period
+    )
 
-    if filtered_df is not None and not pivot_qty.empty and not pivot_sum.empty:
-        styled_qty = pivot_qty.style.format("{:,.0f}").set_properties(**{
+    # Ліки
+    _, qty_lek, sum_lek, _ = process_data(
+        sales_df[sales_df['Наименование товаров'].isin(ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ)], selected_period
+    )
+
+    # === Твій стиль ===
+    def styled(df):
+        if df is None or df.empty:
+            return pd.DataFrame().style  # порожній стиль
+        return df.style.format("{:,.0f}").set_properties(**{
             'text-align': 'right',
             'font-size': '14px'
         }).set_properties(**{
@@ -338,25 +352,28 @@ with tabs[5]:
             'background-color': '#f0f0f0'
         }, subset=pd.IndexSlice[:, 'Итого'])
 
-        styled_sum = pivot_sum.style.format("{:,.0f}").set_properties(**{
-            'text-align': 'right',
-            'font-size': '14px'
-        }).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice[:, 'Итого'])
-
-        st.markdown("### Количество")
-        st.dataframe(styled_qty, use_container_width=True, height=(len(pivot_qty) + 1) * 35 + 3)
-
-        st.markdown("### Сумма")
-        st.dataframe(styled_sum, use_container_width=True, height=(len(pivot_sum) + 1) * 35 + 3)
-
+    # === Вивід — як ти просив: зверху Кількість, знизу Сума ===
+    if qty_bad is not None and not qty_bad.empty:
+        st.markdown("### БАДЫ")
+        st.markdown("**Количество**")
+        st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
+        st.markdown("**Сумма**")
+        st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
     else:
-        st.write("Дані відсутні.")
+        st.markdown("### БАДЫ")
+        st.write("Дані відсутні за вибраний період.")
+
+    st.markdown("---")
+
+    if qty_lek is not None and not qty_lek.empty:
+        st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
+        st.markdown("**Количество**")
+        st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
+        st.markdown("**Сумма**")
+        st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
+    else:
+        st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
+        st.write("Дані відсутні за вибраний період.")
 
 # Вкладка "Регионы"
 with tabs[6]:
@@ -639,12 +656,12 @@ with tabs[9]:
 
     value_column = 'кол-во' if value_type == "Количество" else 'Сумма СИП'
 
-    exclude_list = ['вакант Кашкадарья', 'вакант Самарканд']
     mp_pivots = {}
 
     if selected_mp == "Все МП":
         for mp in mp_list[1:]:
-            if mp in exclude_list:
+            # Перевіряємо, чи є слово "вакант" у назві МП
+            if 'вакант' in mp.lower():
                 mp_pivots[mp] = calculate_excluded_mp_pivot(sales_df, mp, selected_period, value_column=value_column)
             else:
                 mp_pivots[mp] = calculate_mp_pivot_with_tashkent(sales_df, mp, selected_period, value_column=value_column)
@@ -666,7 +683,8 @@ with tabs[9]:
                 }, subset=pd.IndexSlice[:, 'Итого'])
                 st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
     else:
-        if selected_mp in exclude_list:
+        # Перевіряємо, чи є слово "вакант" у назві МП
+        if 'вакант' in selected_mp.lower():
             pivot_table = calculate_excluded_mp_pivot(sales_df, selected_mp, selected_period, value_column=value_column)
         else:
             pivot_table = calculate_mp_pivot_with_tashkent(sales_df, selected_mp, selected_period, value_column=value_column)
