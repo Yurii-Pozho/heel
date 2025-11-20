@@ -14,13 +14,54 @@ from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
 import seaborn as sns
 import matplotlib.pyplot as plt
 import io
+import base64
+from pathlib import Path
 from heatmap import calculate_district_heatmap, month_order, mp_district_mapping
 
+
 st.set_page_config(layout="wide")
-st.markdown(
-    "<h1 style='text-align: center; color: #2E7D32; font-size: 100px; font-family: Montserrat, sans-serif;'>- Heel</h1>",
-    unsafe_allow_html=True
-)
+
+# Функція для перетворення зображення на Base64 (необхідна для використання в st.markdown)
+def img_to_base64(img_path):
+    # ПЕРЕВІРТЕ ПРАВИЛЬНИЙ ШЛЯХ до вашого файлу "sticker.jpg"
+    try:
+        img_bytes = Path(img_path).read_bytes()
+        encoded = base64.b64encode(img_bytes).decode()
+        return encoded
+    except FileNotFoundError:
+        st.error("Файл 'sticker.jpg' не знайдено.")
+        return None
+
+img_base64 = img_to_base64("sticker.jpg")
+
+if img_base64:
+    st.markdown(
+        f"""
+        <style>
+            /* 1. Перевизначаємо CSS Streamlit, щоб видалити максимальну ширину */
+            /* Це впливає на більшу частину вмісту на сторінці */
+            .main .block-container {{
+                max-width: 100% !important;
+                padding-left: 0rem;
+                padding-right: 0rem;
+            }}
+
+            /* 2. Стилі для контейнера зображення */
+            .full-width-image-container {{
+                display: flex;
+                justify-content: center;
+                /* Якщо потрібно, щоб він розтягувався на всю ширину (100% viewport width) */
+                width: 100vw; 
+                margin-left: calc(-50vw + 50%); /* Компенсуємо зміщення, щоб вийти за межі */
+            }}
+        </style>
+
+        <div class="full-width-image-container">
+            <img src="data:image/jpeg;base64,{img_base64}" style="max-height: 300px; width: auto; object-fit: contain; margin-bottom: 20px;">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Завантаження файлу
 uploaded_file = st.file_uploader("Загрузите файл Excel", type=["xlsx", "csv"])
