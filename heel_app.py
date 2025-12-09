@@ -674,65 +674,92 @@ def get_mp_sort_key(mp_name):
 
 with tabs[9]:
     st.markdown("### Сводная таблица по МП")
-    
+
+    # --- Вибір періоду ---
     used_months = sorted(sales_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
     period_labels = ['Все'] + used_months
 
-    period_range = st.select_slider("Диапазон", options=period_labels, value=('Все', period_labels[-1]))
+    period_range = st.select_slider(
+        "Диапазон периодов",
+        options=period_labels,
+        value=('Все', period_labels[-1])
+    )
     start, end = period_range
-    selected_period = None if start == 'Все' else period_labels[period_labels.index(start):period_labels.index(end)+1]
+    selected_period = None if start == 'Все' else period_labels[period_labels.index(start):period_labels.index(end) + 1]
 
-    mp_options = set(sales_df['МП'].dropna().unique().tolist()) | set(FOCUS_MANAGERS_AND_DISTRICTS.keys())
-    mp_list = ['Все МП'] + sorted(list(mp_options))
-    selected_mp = st.selectbox("Выберите МП", mp_list)
+    # --- Вибір МП ---
+    mp_options = set(sales_df['МП'].dropna().unique()) | set(FOCUS_MANAGERS_AND_DISTRICTS.keys())
+    mp_list = ['Все МП'] + sorted(mp_options)
+    selected_mp = st.selectbox("Выберите МП", mp_list, index=0)
 
+    # --- Показник: кількість чи сума ---
     value_column = 'кол-во' if st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True) == "Количество" else 'Сумма СИП'
 
-    if selected_mp == "Все МП":
-        
-        all_mps_to_show = sorted(mp_list[1:], key=lambda mp: (get_mp_sort_key(mp), mp))
-        
-        for mp in all_mps_to_show:
-            st.markdown(f"#### {mp}")
-            
-            if is_focus_manager(mp):
-                table = calculate_focus_mp_pivot(sales_df, mp, selected_period, value_column)
-            elif is_excluded(mp):
-                table = calculate_excluded_mp_pivot(sales_df, mp, selected_period, value_column) 
-            else:
-                table = calculate_mp_pivot_with_bonus(sales_df, mp, selected_period, value_column)
-            
-            if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table['Итого'].sum() == 0):
-                st.caption("— нет данных —")
-            else:
-                table_height = (len(table) + 1) * 35 
-                
-                st.dataframe(table.style.format("{:,.0f}")
-                             .set_properties(**{'text-align': 'right'})
-                             .set_properties(**{'font-weight': 'bold', 'background-color': '#f0f0f0'}, subset='Итого'),
-                             use_container_width=True, 
-                             height=table_height)
-                             
-    else:
-        st.markdown(f"### {selected_mp}")
-        
-        if is_focus_manager(selected_mp):
-            table = calculate_focus_mp_pivot(sales_df, selected_mp, selected_period, value_column)
-        elif is_excluded(selected_mp):
-            table = calculate_excluded_mp_pivot(sales_df, selected_mp, selected_period, value_column)
+    # --- Функція стилізації таблиці ---
+    def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+        return (df
+                .style
+                .format("{:,.0f}", na_rep="0")
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-weight': 'bold',
+                    'color': '#000000'
+                })
+                # Підсумковий рядок «Итого»
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'color': '#006400',           # темно-зелений
+                    'background-color': '#f0f0f0'
+                }, subset=pd.IndexSlice['Итого', :])
+                # Підсумковий стовпець «Итого» (якщо є)
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'color': '#006400',
+                    'background-color': '#f0f0f0'
+                }, subset=pd.IndexSlice[:, 'Итого'])
+                # Заголовки колонок
+                .set_table_styles([
+                    {'selector': 'th',
+                     'props': [('font-weight', 'bold'),
+                               ('text-align', 'center'),
+                               ('background-color', '#e6e6e6')]}
+                ])
+                )
+
+    # --- Функція для розрахунку та відображення однієї таблиці ---
+    def show_mp_table(mp_name: str):
+        st.markdown(f"#### {mp_name}")
+
+        if is_focus_manager(mp_name):
+            table = calculate_focus_mp_pivot(sales_df, mp_name, selected_period, value_column)
+        elif is_excluded(mp_name):
+            table = calculate_excluded_mp_pivot(sales_df, mp_name, selected_period, value_column)
         else:
-            table = calculate_mp_pivot_with_bonus(sales_df, selected_mp, selected_period, value_column)
-        
-        if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table['Итого'].sum() == 0):
+            table = calculate_mp_pivot_with_bonus(sales_df, mp_name, selected_period, value_column)
+
+        # Перевірка на порожню таблицю
+        if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table.iloc[-1].sum() == 0):
             st.caption("— нет данных —")
-        else:
-            table_height = (len(table) + 1) * 35
-            
-            st.dataframe(table.style.format("{:,.0f}")
-                         .set_properties(**{'text-align': 'right'})
-                         .set_properties(**{'font-weight': 'bold', 'background-color': '#f0f0f0'}, subset='Итого'),
-                         use_container_width=True,
-                         height=table_height) 
+            return
+
+        # Висота таблиці (приблизно 35 пікселів на рядок + трохи запасу)
+        height = (len(table) + 2) * 35 + 10
+
+        st.dataframe(
+            style_table(table),
+            use_container_width=True,
+            height=height
+        )
+
+    # --- Основна логіка відображення ---
+    if selected_mp == "Все МП":
+        mps_to_show = sorted(mp_list[1:], key=lambda x: (get_mp_sort_key(x), x))
+        for mp in mps_to_show:
+            show_mp_table(mp)
+            st.markdown("---")  # роздільник між МП
+    else:
+        show_mp_table(selected_mp)
+        
 with tabs[10]:
     st.markdown("### Тепловая карта по районам")
     
