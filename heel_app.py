@@ -675,6 +675,14 @@ def get_mp_sort_key(mp_name):
 with tabs[9]:
     st.markdown("### Сводная таблица по МП")
 
+    # --- CSS для примусового виділення заголовків (якщо використовується st.dataframe) ---
+    st.markdown("""
+        <style>
+            .stDataFrame th { font-weight: bold !important; color: black !important; }
+            [data-testid="stTable"] th { font-weight: bold !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
     # --- Вибір періоду ---
     used_months = sorted(sales_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
     period_labels = ['Все'] + used_months
@@ -692,41 +700,31 @@ with tabs[9]:
     mp_list = ['Все МП'] + sorted(mp_options)
     selected_mp = st.selectbox("Выберите МП", mp_list, index=0)
 
-    # --- Показник: кількість чи сума ---
+    # --- Показник ---
     value_column = 'кол-во' if st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True) == "Количество" else 'Сумма СИП'
 
-    # --- Функція стилізації таблиці ---
-    def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
-        return (df
-                .style
+    # --- ВИПРАВЛЕНА ФУНКЦІЯ СТИЛІЗАЦІЇ ---
+    def style_table(df: pd.DataFrame):
+        return (df.style
                 .format("{:,.0f}", na_rep="0")
                 .set_properties(**{
+                    'font-weight': 'bold',  # Жирний для всіх даних
                     'text-align': 'right',
-                    'font-weight': 'bold',
-                    'color': '#000000'
+                    'color': 'black'
                 })
-                # Підсумковий рядок «Итого»
-                .set_properties(**{
-                    'font-weight': 'bold',
-                    'color': '#006400',           # темно-зелений
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice['Итого', :])
-                # Підсумковий стовпець «Итого» (якщо є)
-                .set_properties(**{
-                    'font-weight': 'bold',
-                    'color': '#006400',
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice[:, 'Итого'])
-                # Заголовки колонок
                 .set_table_styles([
-                    {'selector': 'th',
-                     'props': [('font-weight', 'bold'),
-                               ('text-align', 'center'),
-                               ('background-color', '#e6e6e6')]}
+                    # Селектори для заголовків колонок
+                    {'selector': 'th', 'props': [('font-weight', 'bold'), ('color', 'black'), ('background-color', '#f0f2f6')]},
+                    # Селектор для назв товарів (ліва колонка)
+                    {'selector': '.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]},
+                    {'selector': '.index_name', 'props': [('font-weight', 'bold')]}
                 ])
-                )
+                # Підсвітка підсумків
+                .apply(lambda x: ['background-color: #e6f3e6; color: #006400; font-weight: bold' 
+                                  if (x.name == 'Итого' or col == 'Итого') else '' 
+                                  for col in x.index], axis=1)
+               )
 
-    # --- Функція для розрахунку та відображення однієї таблиці ---
     def show_mp_table(mp_name: str):
         st.markdown(f"#### {mp_name}")
 
@@ -737,26 +735,20 @@ with tabs[9]:
         else:
             table = calculate_mp_pivot_with_bonus(sales_df, mp_name, selected_period, value_column)
 
-        # Перевірка на порожню таблицю
-        if table.empty or (len(table) == 1 and table.index[0] == 'Итого' and table.iloc[-1].sum() == 0):
+        if table.empty:
             st.caption("— нет данных —")
             return
 
-        # Висота таблиці (приблизно 35 пікселів на рядок + трохи запасу)
-        height = (len(table) + 2) * 35 + 10
+        # ВИКОРИСТОВУЄМО st.table для 100% результату жирного шрифту в заголовках
+        # Якщо таблиця дуже велика, можна повернути st.dataframe, але st.table краще тримає стилі
+        st.table(style_table(table))
 
-        st.dataframe(
-            style_table(table),
-            use_container_width=True,
-            height=height
-        )
-
-    # --- Основна логіка відображення ---
+    # --- Логіка відображення ---
     if selected_mp == "Все МП":
-        mps_to_show = sorted(mp_list[1:], key=lambda x: (get_mp_sort_key(x), x))
+        mps_to_show = sorted(mp_list[1:])
         for mp in mps_to_show:
             show_mp_table(mp)
-            st.markdown("---")  # роздільник між МП
+            st.divider()
     else:
         show_mp_table(selected_mp)
         
