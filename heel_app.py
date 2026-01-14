@@ -138,11 +138,25 @@ with tabs[1]:
 with tabs[2]:
     st.markdown("### Сводная таблица по источникам (Стоки)")
     
+    # 1. CSS для примусового жирного шрифту в заголовках та клітинках
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     if stocks_df is None:
         st.warning("Аркуш 'Стоки' не знайдено в файлі Excel.")
         st.stop()
 
-    
     # Перевірка необхідних колонок
     required_columns = ['Наименование товаров', 'период', 'источник', 'кол-во', 'Сумма СИП']
     missing_columns = [col for col in required_columns if col not in stocks_df.columns]
@@ -180,12 +194,9 @@ with tabs[2]:
         key="stocks_period_slider"
     )
     start_period, end_period = period_range
-    if start_period == 'Все':
-        selected_period = None
-    else:
-        start_idx = period_labels.index(start_period)
-        end_idx = period_labels.index(end_period)
-        selected_period = period_labels[start_idx:end_idx + 1]
+    selected_period = None if start_period == 'Все' else period_labels[
+        period_labels.index(start_period): period_labels.index(end_period) + 1
+    ]
     
     # Вибір джерела
     source_list = stocks_df['источник'].dropna().unique().tolist()
@@ -198,45 +209,65 @@ with tabs[2]:
         key="stocks_source_selectbox"
     )
     
+    # --- Внутрішня функція стилізації ---
+    def style_stock_pivot(df):
+        return (df.style.format("{:,.0f}", na_rep='0')
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
+
     # Генерація зведеної таблиці
     if selected_source == "Все источники":
         for source in source_list[1:]:
-            st.markdown(f"{source}")
+            st.markdown(f"#### {source}")
             pivot_table = calculate_source_pivot(stocks_df, source, selected_period, value_column=value_column)
             if pivot_table.empty:
                 st.write("Дані відсутні.")
             else:
-                styled_table = pivot_table.style.format("{:,.0f}", na_rep='').set_properties(**{
-                    'text-align': 'right',
-                    'font-size': '14px'
-                }).set_properties(**{
-                    'font-weight': 'bold',
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-                    'font-weight': 'bold',
-                    'background-color': '#f0f0f0'
-                }, subset=pd.IndexSlice[:, 'Итого'])
-                st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
+                st.table(style_stock_pivot(pivot_table))
+            st.divider()
     else:
         st.markdown(f"#### {selected_source}")
         pivot_table = calculate_source_pivot(stocks_df, selected_source, selected_period, value_column=value_column)
         if pivot_table.empty:
             st.write("Дані відсутні.")
         else:
-            styled_table = pivot_table.style.format("{:,.0f}", na_rep='').set_properties(**{
-                'text-align': 'right',
-                'font-size': '14px'
-            }).set_properties(**{
-                'font-weight': 'bold',
-                'background-color': '#f0f0f0'
-            }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-                'font-weight': 'bold',
-                'background-color': '#f0f0f0'
-            }, subset=pd.IndexSlice[:, 'Итого'])
-            st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)        
+            st.table(style_stock_pivot(pivot_table))
 
 # Вкладка "Первичка + вторичка - первичка"
 with tabs[3]:
+    # 1. CSS для примусового жирного шрифту в заголовках та клітинках
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     # === слайдер (залишаємо як є) ===
     temp_df = sales_df.copy()
     temp_df['период'] = pd.Categorical(temp_df['период'], categories=month_order, ordered=True)
@@ -259,45 +290,81 @@ with tabs[3]:
         period_labels.index(start_period): period_labels.index(end_period) + 1
     ]
 
-    # === отримуємо всі чотири таблиці одним викликом ===
+    # === отримуємо дані ===
     qty_bad, sum_bad, qty_lek, sum_lek, _ = create_pivot_by_group(sales_df, selected_period)
 
-    # === стилізація (та сама, що в тебе була) ===
+    # === Оновлена функція стилізації ===
     def styled(df):
-        return df.style.format("{:,.0f}", na_rep='').set_properties(**{
-            'text-align': 'right',
-            'font-size': '14px'
-        }).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice[:, 'Итого'])
+        if df is None or df.empty:
+            return pd.DataFrame().style
+        return (df.style.format("{:,.0f}", na_rep='')
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    # Робимо назви товарів (індекс) жирними та вирівнюємо вліво
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400' # Темно-зелений для підсумків
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
 
     # ====================== БАДЫ ======================
     st.markdown("### БАДЫ")
 
-    st.markdown("**Количество**")
-    st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
+    if qty_bad is not None and not qty_bad.empty:
+        st.markdown("**Количество**")
+        st.table(styled(qty_bad)) # Заміна st.dataframe на st.table
 
-    st.markdown("**Сумма СИП**")
-    st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
+        st.markdown("**Сумма СИП**")
+        st.table(styled(sum_bad))
+    else:
+        st.write("Дані по БАДам відсутні")
 
     st.markdown("---")
 
     # ====================== ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ======================
     st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
 
-    st.markdown("**Количество**")
-    st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
+    if qty_lek is not None and not qty_lek.empty:
+        st.markdown("**Количество**")
+        st.table(styled(qty_lek))
 
-    st.markdown("**Сумма СИП**")
-    st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
+        st.markdown("**Сумма СИП**")
+        st.table(styled(sum_lek))
+    else:
+        st.write("Дані по лікам відсутні")
 
 # Вкладка "Источники по периодам"
 with tabs[4]:
     st.markdown("### Сводная таблица: Кол-во по источнику и периоду")
+
+    # 1. CSS для примусового жирного шрифту в заголовках та клітинках
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     filtered_df = sales_df[~sales_df['источник'].isin(['Первичка минус', 'Первичка'])].copy()
     filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
     filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
@@ -323,36 +390,62 @@ with tabs[4]:
 
     pivot_qty_by_source, pivot_sum_by_source = generate_source_pivots(sales_df, selected_period)
 
-    styled_qty_by_source = pivot_qty_by_source.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    # --- Універсальна функція стилізації ---
+    def style_source_pivot(df):
+        return (df.style.format("{:,.0f}", na_rep='')
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    # Робимо назви джерел (індекс) жирними та вирівняними по лівому краю
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400' # темно-зелений для підсумків
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
 
-    st.dataframe(styled_qty_by_source, use_container_width=True, height=(len(pivot_qty_by_source) + 1) * 35 + 3)
+    # 1. Таблиця: Кол-во
+    if not pivot_qty_by_source.empty:
+        st.table(style_source_pivot(pivot_qty_by_source))
+    else:
+        st.write("Дані відсутні за вибраний період.")
 
+    # 2. Таблиця: Сумма СИП
     st.markdown("### Сводная таблица: Сумма СИП по источнику и периоду")
-    styled_sum_by_source = pivot_sum_by_source.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
-
-    st.dataframe(styled_sum_by_source, use_container_width=True, height=(len(pivot_sum_by_source) + 1) * 35 + 3)
+    if not pivot_sum_by_source.empty:
+        st.table(style_source_pivot(pivot_sum_by_source))
+    else:
+        st.write("Дані відсутні за вибраний період.")
 
 # Вкладка "Eco Lec продажи"
 with tabs[5]:
     st.markdown("### Сводная таблица и график по 'Первичка'")
+
+    # 1. CSS для примусового жирного шрифту в заголовках та індексах
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
     # === Твій слайдер — без змін ===
     period_labels = ['Все'] + month_order
@@ -367,65 +460,91 @@ with tabs[5]:
         period_labels.index(start_period): period_labels.index(end_period) + 1
     ]
 
-    # === Викликаємо ТВОЮ функцію двічі — для БАДів і Ліків ===
-    # БАДи
+    # === Виклик функцій — без змін ===
     _, qty_bad, sum_bad, _ = process_data(
         sales_df[sales_df['Наименование товаров'].isin(БАДЫ)], selected_period
     )
 
-    # Ліки
     _, qty_lek, sum_lek, _ = process_data(
         sales_df[sales_df['Наименование товаров'].isin(ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ)], selected_period
     )
 
-    # === Твій стиль ===
+    # === Оновлена функція стилізації ===
     def styled(df):
         if df is None or df.empty:
-            return pd.DataFrame().style  # порожній стиль
-        return df.style.format("{:,.0f}").set_properties(**{
-            'text-align': 'right',
-            'font-size': '14px'
-        }).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice[:, 'Итого'])
+            return pd.DataFrame().style
+        return (df.style.format("{:,.0f}")
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    # Робимо назви товарів (індекс) жирними
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#f0f0f0',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
 
-    # === Вивід — як ти просив: зверху Кількість, знизу Сума ===
+    # === Вивід: БАДЫ ===
+    st.markdown("### БАДЫ")
     if qty_bad is not None and not qty_bad.empty:
-        st.markdown("### БАДЫ")
         st.markdown("**Количество**")
-        st.dataframe(styled(qty_bad), use_container_width=True, height=(len(qty_bad) + 1) * 35 + 3)
+        st.table(styled(qty_bad)) # Використовуємо st.table для фіксації жирного шрифту
+        
         st.markdown("**Сумма**")
-        st.dataframe(styled(sum_bad), use_container_width=True, height=(len(sum_bad) + 1) * 35 + 3)
+        st.table(styled(sum_bad))
     else:
-        st.markdown("### БАДЫ")
         st.write("Дані відсутні за вибраний період.")
 
     st.markdown("---")
 
+    # === Вивід: ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ===
+    st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
     if qty_lek is not None and not qty_lek.empty:
-        st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
         st.markdown("**Количество**")
-        st.dataframe(styled(qty_lek), use_container_width=True, height=(len(qty_lek) + 1) * 35 + 3)
+        st.table(styled(qty_lek))
+        
         st.markdown("**Сумма**")
-        st.dataframe(styled(sum_lek), use_container_width=True, height=(len(sum_lek) + 1) * 35 + 3)
+        st.table(styled(sum_lek))
     else:
-        st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
         st.write("Дані відсутні за вибраний період.")
 
 # Вкладка "Регионы"
 with tabs[6]:
-    st.markdown("### Сводная таблиця по регионам")
+    st.markdown("### Сводная таблица по регионам")
+
+    # 1. CSS для примусового жирного шрифту в заголовках та індексах
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
     # Вибір показника
     value_type = st.radio(
         "Выберите показатель",
         options=["Количество", "Сумма СИП"],
         key="region_value_type_radio",
-        horizontal=True  # Горизонтальне розташування
+        horizontal=True
     )
     value_column = 'кол-во' if value_type == "Количество" else 'Сумма СИП'
 
@@ -434,10 +553,11 @@ with tabs[6]:
         st.error(f"Колонка '{value_column}' відсутня в аркуші 'Продажи'. Доступні колонки: {sales_df.columns.tolist()}")
         st.stop()
 
-    # Вибір діапазону дат
+    # Підготовка даних та вибір діапазону дат
     filtered_df = sales_df[~sales_df['источник'].isin(['Первичка', 'Первичка минус'])].copy()
     filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
     filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
+    
     used_months = sorted(
         filtered_df[filtered_df[value_column] > 0]['период'].dropna().unique(),
         key=lambda x: month_order.index(x)
@@ -469,42 +589,67 @@ with tabs[6]:
         st.error(f"Помилка в даних: {e}")
         st.stop()
 
-    # Стилізація таблиці з підсвічуванням
+    # Стилізація таблиці з підсвічуванням регіонів та жирними заголовками
     def highlight_tashkent(df):
         styles = pd.DataFrame('', index=df.index, columns=df.columns)
         for row in df.index:
             if row.startswith('Ташкент область'):
-                for col in df.columns:
-                    if col != 'Итого':
-                        styles.at[row, col] = 'background-color: #ADD8E6'
+                # Світло-блакитний для області
+                styles.loc[row, df.columns != 'Итого'] = 'background-color: #ADD8E6; color: black;'
             elif row.startswith('Ташкент'):
-                for col in df.columns:
-                    if col != 'Итого':
-                        styles.at[row, col] = 'background-color: #90EE90'
+                # Світло-зелений для міста
+                styles.loc[row, df.columns != 'Итого'] = 'background-color: #90EE90; color: black;'
         return styles
 
     if not pivot_table.empty:
-        styled_table = pivot_table.style.format("{:,.0f}", na_rep='').apply(
-            highlight_tashkent, axis=None
-        ).set_properties(**{
-            'text-align': 'right',
-            'font-size': '14px'
-        }).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-            'font-weight': 'bold',
-            'background-color': '#f0f0f0'
-        }, subset=pd.IndexSlice[:, 'Итого'])
+        styled_table = (pivot_table.style
+            .format("{:,.0f}", na_rep='0')
+            .apply(highlight_tashkent, axis=None)
+            .set_properties(**{
+                'text-align': 'right',
+                'font-size': '14px',
+                'font-weight': 'bold', # Робимо дані жирними
+                'color': 'black'
+            })
+            .set_table_styles([
+                # Окремо стилізуємо назву рядка (регіон)
+                {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+            ])
+            .set_properties(**{
+                'font-weight': 'bold',
+                'background-color': '#f0f0f0',
+                'color': '#006400' # Темно-зелений для підсумків
+            }, subset=pd.IndexSlice[pivot_table.index == 'Итого', :])
+            .set_properties(**{
+                'font-weight': 'bold',
+                'background-color': '#f0f0f0',
+                'color': '#006400'
+            }, subset=pd.IndexSlice[:, pivot_table.columns == 'Итого'])
+        )
 
         st.markdown(f"### {value_type}")
-        st.dataframe(styled_table, use_container_width=True, height=(len(pivot_table) + 1) * 35 + 3)
+        # Використовуємо st.table для фіксованого відображення стилів заголовків
+        st.table(styled_table)
     else:
         st.warning(f"Дані відсутні для показника '{value_type}' у вибраний період.")
-
 # Решта вкладок (Ташкент, Ташкентская область, МП общее) залишаються без змін
 # Наприклад, вкладка "Ташкент"
 with tabs[7]:
+    # 1. CSS для примусового жирного шрифту в заголовках та індексах
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { 
+                font-weight: bold !important; 
+                color: black !important; 
+                background-color: #f0f2f6 !important; 
+            }
+            [data-testid="stTable"] td { 
+                font-weight: bold !important; 
+                color: black !important; 
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown("### Сводная таблица: Кол-во по товарам (Ташкент)")
     period_labels = ['Все'] + month_order
     period_range = st.select_slider(
@@ -521,67 +666,61 @@ with tabs[7]:
         end_idx = period_labels.index(end_period)
         selected_period = period_labels[start_idx:end_idx + 1]
 
+    # --- Універсальна функція стилізації для цієї вкладки ---
+    def style_tashkent_pivot(df):
+        return (df.style.format("{:,.0f}", na_rep='')
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'background-color': '#e6f3e6', # світло-зелений для підсумків
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'background-color': '#e6f3e6',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
+
+    # 1. Кол-во по товарам (Ташкент)
     pivot_tashkent = generate_tashkent_pivot(sales_df, selected_period)
-    styled_tashkent = pivot_tashkent.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_tashkent.empty:
+        st.table(style_tashkent_pivot(pivot_tashkent))
 
-    st.dataframe(styled_tashkent, use_container_width=True, height=(len(pivot_tashkent) + 1) * 35 + 3)
-
+    # 2. Сумма СИП по товарам (Ташкент)
     st.markdown("### Сводная таблица: Сумма СИП по товарам (Ташкент)")
     pivot_tashkent_sum_sip = generate_tashkent_sum_sip_pivot(sales_df, selected_period)
-    styled_tashkent_sum_sip = pivot_tashkent_sum_sip.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_tashkent_sum_sip.empty:
+        st.table(style_tashkent_pivot(pivot_tashkent_sum_sip))
 
-    st.dataframe(styled_tashkent_sum_sip, use_container_width=True, height=(len(pivot_tashkent_sum_sip) + 1) * 35 + 3)
-
+    # 3. Кол-во (разд. на 4)
     st.markdown("### Сводная таблица: Кол-во по товарам (Ташкент, разделено на 4)")
     pivot_tashkent_divided = generate_tashkent_divided_pivot(sales_df, selected_period)
-    styled_tashkent_divided = pivot_tashkent_divided.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_tashkent_divided.empty:
+        st.table(style_tashkent_pivot(pivot_tashkent_divided))
 
-    st.dataframe(styled_tashkent_divided, use_container_width=True, height=(len(pivot_tashkent_divided) + 1) * 35 + 3)
-
+    # 4. Сумма СИП (разд. на 4)
     st.markdown("### Сводная таблица: Сумма СИП по товарам (Ташкент, разделено на 4)")
     pivot_tashkent_sum_sip_divided = generate_tashkent_sum_sip_divided_pivot(sales_df, selected_period)
-    styled_tashkent_sum_sip_divided = pivot_tashkent_sum_sip_divided.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
-
-    st.dataframe(styled_tashkent_sum_sip_divided, use_container_width=True, height=(len(pivot_tashkent_sum_sip_divided) + 1) * 35 + 3)
+    if not pivot_tashkent_sum_sip_divided.empty:
+        st.table(style_tashkent_pivot(pivot_tashkent_sum_sip_divided))
 
 # Вкладка "Ташкентская область" (аналогічно оновлюємо)
 with tabs[8]:
+    # 1. Примусовий CSS для жирних заголовків
+    st.markdown("""
+        <style>
+            [data-testid="stTable"] th { font-weight: bold !important; color: black !important; background-color: #f0f2f6 !important; }
+            [data-testid="stTable"] td { font-weight: bold !important; color: black !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown("### Сводная таблица: Кол-во по товарам (Ташкентская область)")
     period_labels = ['Все'] + month_order
     period_range = st.select_slider(
@@ -598,64 +737,52 @@ with tabs[8]:
         end_idx = period_labels.index(end_period)
         selected_period = period_labels[start_idx:end_idx + 1]
 
+    # --- Внутрішня функція стилізації для повторного використання ---
+    def apply_custom_styles(df):
+        return (df.style.format("{:,.0f}", na_rep='')
+                .set_properties(**{
+                    'text-align': 'right',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'color': 'black'
+                })
+                .set_table_styles([
+                    {'selector': 'th.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+                ])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#e6f3e6',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[df.index == 'Итого', :])
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'background-color': '#e6f3e6',
+                    'color': '#006400'
+                }, subset=pd.IndexSlice[:, df.columns == 'Итого'])
+        )
+
+    # 1. Таблиця: Кол-во
     pivot_other_districts = generate_other_districts_pivot(sales_df, selected_period)
-    styled_other_districts = pivot_other_districts.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_other_districts.empty:
+        st.table(apply_custom_styles(pivot_other_districts))
 
-    st.dataframe(styled_other_districts, use_container_width=True, height=(len(pivot_other_districts) + 1) * 35 + 3)
-
+    # 2. Таблиця: Сумма СИП
     st.markdown("### Сводная таблица: Сумма СИП по товарам (Ташкентская область)")
     pivot_other_districts_sum_sip = generate_other_districts_sum_sip_pivot(sales_df, selected_period)
-    styled_other_districts_sum_sip = pivot_other_districts_sum_sip.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_other_districts_sum_sip.empty:
+        st.table(apply_custom_styles(pivot_other_districts_sum_sip))
 
-    st.dataframe(styled_other_districts_sum_sip, use_container_width=True, height=(len(pivot_other_districts_sum_sip) + 1) * 35 + 3)
-
+    # 3. Таблиця: Кол-во (разд. на 4)
     st.markdown("### Сводная таблица: Кол-во по товарам (Ташкентская область, разделено на 4)")
     pivot_other_districts_divided = generate_other_districts_divided_pivot(sales_df, selected_period)
-    styled_other_districts_divided = pivot_other_districts_divided.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
+    if not pivot_other_districts_divided.empty:
+        st.table(apply_custom_styles(pivot_other_districts_divided))
 
-    st.dataframe(styled_other_districts_divided, use_container_width=True, height=(len(pivot_other_districts_divided) + 1) * 35 + 3)
-
+    # 4. Таблиця: Сумма СИП (разд. на 4)
     st.markdown("### Сводная таблица: Сумма СИП по товарам (Ташкентская область, разделено на 4)")
     pivot_other_districts_sum_sip_divided = generate_other_districts_sum_sip_divided_pivot(sales_df, selected_period)
-    styled_other_districts_sum_sip_divided = pivot_other_districts_sum_sip_divided.style.format("{:,.0f}", na_rep='').set_properties(**{
-        'text-align': 'right',
-        'font-size': '14px'
-    }).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice['Итого', :]).set_properties(**{
-        'font-weight': 'bold',
-        'background-color': '#f0f0f0'
-    }, subset=pd.IndexSlice[:, 'Итого'])
-
-    st.dataframe(styled_other_districts_sum_sip_divided, use_container_width=True, height=(len(pivot_other_districts_sum_sip_divided) + 1) * 35 + 3)
+    if not pivot_other_districts_sum_sip_divided.empty:
+        st.table(apply_custom_styles(pivot_other_districts_sum_sip_divided))
 
 # Вкладка "МП общее"
 
