@@ -728,23 +728,26 @@ def get_mp_sort_key(mp_name):
     else:
         return 1
 
+def style_table(df):
+    return (df.style.format("{:,.0f}")
+            .set_properties(**{'font-weight': 'bold', 'text-align': 'right', 'color': 'black'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('font-weight', 'bold'), ('background-color', '#f0f2f6')]},
+                {'selector': '.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
+            ])
+            .apply(lambda x: ['background-color: #e6f3e6; color: #006400' if (x.name == 'Итого' or c == 'Итого') else '' for c in x.index], axis=1))
+
+# --- ВКЛАДКА 9 ---
 with tabs[9]:
     st.markdown("### Сводная таблица по МП (Лекарственные препараты)")
 
-    # Підготовка часового слайдера (спільна логіка для вкладки)
     temp_sales_9 = sales_df.copy()
     temp_sales_9['период'] = pd.to_datetime(temp_sales_9['период'], errors='coerce')
     available_months_9 = sorted(temp_sales_9['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
-    
     month_labels_9 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_9]
     slider_options_9 = ['Все'] + month_labels_9
 
-    p_range_9 = st.select_slider(
-        "Диапазон периодов", 
-        options=slider_options_9, 
-        value=('Все', slider_options_9[-1]), 
-        key="mp_drugs_slider"
-    )
+    p_range_9 = st.select_slider("Диапазон периодов", options=slider_options_9, value=('Все', slider_options_9[-1]), key="mp_drugs_slider")
     
     if p_range_9[0] == 'Все':
         selected_period_9 = available_months_9
@@ -753,32 +756,21 @@ with tabs[9]:
         idx_e = month_labels_9.index(p_range_9[1])
         selected_period_9 = available_months_9[idx_s : idx_e + 1]
 
-    # Визначаємо список МП для вкладки "Лекарства"
-    # Додаємо конкретні ваканти: вакант, вакант Самарканд, вакант Кашкадарья
     drug_vacancies = ['вакант', 'вакант Самарканд', 'вакант Кашкадарья']
-    standard_mps = sorted([
-        mp for mp in sales_df['МП'].dropna().unique() 
-        if (not is_focus_manager(mp) and not is_excluded(mp)) or mp in drug_vacancies
-    ])
+    standard_mps = sorted([mp for mp in sales_df['МП'].dropna().unique() if (not is_focus_manager(mp) and not is_excluded(mp)) or mp in drug_vacancies])
     
     selected_mp_9 = st.selectbox("Выберите МП", ['Все МП'] + standard_mps, key="sel_drugs_mp")
-    
     metric_9 = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="metric_drugs")
     val_col_9 = 'кол-во' if metric_9 == "Количество" else 'Сумма СИП'
 
-    def style_table(df):
-        return (df.style.format("{:,.0f}")
-                .set_properties(**{'font-weight': 'bold', 'text-align': 'right', 'color': 'black'})
-                .set_table_styles([
-                    {'selector': 'th', 'props': [('font-weight', 'bold'), ('background-color', '#f0f2f6')]},
-                    {'selector': '.row_heading', 'props': [('font-weight', 'bold'), ('text-align', 'left')]}
-                ])
-                .apply(lambda x: ['background-color: #e6f3e6; color: #006400' if (x.name == 'Итого' or c == 'Итого') else '' for c in x.index], axis=1))
-
     def render_drug_mp(mp_name):
         st.subheader(f"👨‍⚕️ {mp_name}")
-        # Логіка: якщо це вакант, використовуємо прямий розрахунок без бонусів Ташкента
-        # Якщо живий МП - використовуємо функцію з бонусом 1/4
+        # ДОДАНО: Динамічне визначення районів з даних
+        actual_districts = sales_df[sales_df['МП'] == mp_name]['район'].unique()
+        dist_str = ", ".join(filter(None, actual_districts))
+        if dist_str:
+            st.caption(f"📍 Районы: {dist_str}")
+
         if mp_name in drug_vacancies:
             df_res = calculate_excluded_mp_pivot(sales_df, mp_name, selected_period_9, val_col_9)
         else:
@@ -795,24 +787,18 @@ with tabs[9]:
             st.divider()
     else:
         render_drug_mp(selected_mp_9)
-        
+
+# --- ВКЛАДКА 10 ---
 with tabs[10]:
     st.markdown("### Сводная таблица по менеджерам (БАДы)")
 
-    # Підготовка часового слайдера для Фокус-вкладки
     temp_sales_10 = sales_df.copy()
     temp_sales_10['период'] = pd.to_datetime(temp_sales_10['период'], errors='coerce')
     available_months_10 = sorted(temp_sales_10['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
-    
     month_labels_10 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_10]
     slider_options_10 = ['Все'] + month_labels_10
 
-    p_range_10 = st.select_slider(
-        "Диапазон периодов (Фокус)", 
-        options=slider_options_10, 
-        value=('Все', slider_options_10[-1]), 
-        key="mp_focus_slider"
-    )
+    p_range_10 = st.select_slider("Диапазон периодов (Фокус)", options=slider_options_10, value=('Все', slider_options_10[-1]), key="mp_focus_slider")
     
     if p_range_10[0] == 'Все':
         selected_period_10 = available_months_10
@@ -821,18 +807,18 @@ with tabs[10]:
         idx_e_10 = month_labels_10.index(p_range_10[1])
         selected_period_10 = available_months_10[idx_s_10 : idx_e_10 + 1]
 
-    # Список Фокус-менеджерів + вакант Бады
     focus_mps = sorted(list(FOCUS_MANAGERS_AND_DISTRICTS.keys()) + ['вакант Бады'])
     selected_mp_10 = st.selectbox("Выберите менеджера", ['Все МП'] + focus_mps, key="sel_focus_mp")
-    
     metric_10 = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="metric_focus")
     val_col_10 = 'кол-во' if metric_10 == "Количество" else 'Сумма СИП'
 
     def render_focus_mp(mp_name):
         st.subheader(f"👨‍⚕️ {mp_name}")
-        
-        # Якщо це 'вакант Бады', робимо прямий розрахунок без фільтрації за районами фокусу,
-        # або можна додати його в FOCUS_MANAGERS_AND_DISTRICTS, якщо є райони.
+        # ДОДАНО: Визначення районів з константи фокус-менеджерів
+        target_districts = FOCUS_MANAGERS_AND_DISTRICTS.get(mp_name, [])
+        dist_str = ", ".join(target_districts) if target_districts else "все районы"
+        st.caption(f"📍 Районы: {dist_str}")
+
         if mp_name == 'вакант Бады':
             df_res = calculate_excluded_mp_pivot(sales_df, mp_name, selected_period_10, val_col_10)
         else:
@@ -841,15 +827,14 @@ with tabs[10]:
         if not df_res.empty:
             st.table(style_table(df_res))
         else:
-            districts = FOCUS_MANAGERS_AND_DISTRICTS.get(mp_name, "все районы")
-            st.info(f"Нет данных по БАДам ({districts})")
+            st.info(f"Нет данных по БАДам ({dist_str})")
 
     if selected_mp_10 == "Все МП":
         for mp in focus_mps:
             render_focus_mp(mp)
             st.divider()
     else:
-        render_focus_mp(selected_mp_10)        
+        render_focus_mp(selected_mp_10)       
         
 with tabs[11]:
     st.markdown("### 🌆 Тепловая карта по районам")
