@@ -1,77 +1,60 @@
 import pandas as pd
-
-
-month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+from utils import MONTH_MAP
 
 def generate_source_pivots(df, selected_period=None):
-    # Фільтруємо дані, виключаючи джерело 'Первичка минус'
-    filtered_df = df[~df['источник'].isin(['Первичка минус', 'Первичка'])].copy()
+    """
+    Створює зведені таблиці за джерелами, використовуючи хронологію дат.
+    """
+    # 1. Фільтруємо непотрібні джерела
+    filtered_df = df[~df['источник'].isin(['Первичка Минус', 'Первичка'])].copy()
     
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
+    # 2. Очищення та нормалізація дат
+    filtered_df['период'] = pd.to_datetime(filtered_df['период'], errors='coerce')
+    filtered_df = filtered_df.dropna(subset=['период'])
+    filtered_df['период'] = filtered_df['период'].dt.to_period('M').dt.to_timestamp()
     
-    # Фільтрація за вибраним діапазоном періодів
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
+    # 3. Фільтрація за вибраним періодом
+    if selected_period is not None:
+        selected_period_dt = pd.to_datetime(selected_period).to_period('M').to_timestamp()
+        filtered_df = filtered_df[filtered_df['период'].isin(selected_period_dt)]
     
-    # Перетворюємо 'кол-во' і 'Сумма СИП' у числові типи
+    # 4. Перетворення показників
     filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
     filtered_df['Сумма СИП'] = pd.to_numeric(filtered_df['Сумма СИП'], errors='coerce').fillna(0)
     
-    # Визначаємо місяці, які реально є в даних (з ненульовими значеннями для 'кол-во')
-    used_months_qty = sorted(
-        filtered_df[filtered_df['кол-во'] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
+    def finalize_pivot(pivot_df):
+        if pivot_df.empty:
+            return pivot_df
+        
+        # Сортуємо стовпці хронологічно
+        pivot_df = pivot_df.reindex(columns=sorted(pivot_df.columns))
+        
+        # Додаємо підсумки
+        pivot_df['Итого'] = pivot_df.sum(axis=1)
+        total_row = pivot_df.sum(axis=0).to_frame().T
+        total_row.index = ['Итого']
+        pivot_df = pd.concat([pivot_df, total_row])
+        
+        # Форматування заголовків (Російська мова)
+        new_cols = {}
+        for col in pivot_df.columns:
+            if isinstance(col, pd.Timestamp):
+                eng_month = col.strftime('%B')
+                ru_month = MONTH_MAP.get(eng_month, eng_month)
+                new_cols[col] = f"{ru_month} {col.year}"
+        
+        return pivot_df.rename(columns=new_cols).round(0).astype(int)
+
+    # 5. Кількість
+    pivot_qty = pd.pivot_table(
+        filtered_df, index='источник', columns='период', values='кол-во', aggfunc='sum', fill_value=0
     )
+    pivot_qty = finalize_pivot(pivot_qty)
     
-    # Визначаємо місяці, які реально є в даних (з ненульовими значеннями для 'Сумма СИП')
-    used_months_sum = sorted(
-        filtered_df[filtered_df['Сумма СИП'] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
+    # 6. Сума СИП
+    pivot_sum = pd.pivot_table(
+        filtered_df, index='источник', columns='период', values='Сумма СИП', aggfunc='sum', fill_value=0
     )
+    pivot_sum = finalize_pivot(pivot_sum)
     
-    # Створюємо зведену таблицю для кількості
-    pivot_qty_by_source = pd.pivot_table(
-        filtered_df,
-        index='источник',
-        columns='период',
-        values='кол-во',
-        aggfunc='sum',
-        fill_value=0,
-        margins=False
-    )
-    
-    # Сортуємо стовпці за наявними місяцями
-    pivot_qty_by_source = pivot_qty_by_source.reindex(columns=used_months_qty)
-    
-    # Додаємо "Итого" вручну
-    pivot_qty_by_source['Итого'] = pivot_qty_by_source.sum(axis=1)
-    total_row_qty = pivot_qty_by_source.sum(axis=0).to_frame().T
-    total_row_qty.index = ['Итого']
-    pivot_qty_by_source = pd.concat([pivot_qty_by_source, total_row_qty]).round(0)
-    
-    # Створюємо зведену таблицю для суми СИП
-    pivot_sum_by_source = pd.pivot_table(
-        filtered_df,
-        index='источник',
-        columns='период',
-        values='Сумма СИП',
-        aggfunc='sum',
-        fill_value=0,
-        margins=False
-    )
-    
-    # Сортуємо стовпці за наявними місяцями
-    pivot_sum_by_source = pivot_sum_by_source.reindex(columns=used_months_sum)
-    
-    # Додаємо "Итого" вручну
-    pivot_sum_by_source['Итого'] = pivot_sum_by_source.sum(axis=1)
-    total_row_sum = pivot_sum_by_source.sum(axis=0).to_frame().T
-    total_row_sum.index = ['Итого']
-    pivot_sum_by_source = pd.concat([pivot_sum_by_source, total_row_sum]).round(0)
-    
-    return pivot_qty_by_source, pivot_sum_by_source
+    return pivot_qty, pivot_sum

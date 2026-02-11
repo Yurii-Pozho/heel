@@ -1,84 +1,45 @@
+from utils import finalize_report
 import pandas as pd
 
-month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-
 def process_data(df, selected_period=None):
+    # Фільтруємо джерело
     filtered_df = df[df['источник'] == 'Первичка'].copy()
     if filtered_df.empty:
         return None, None, None, []
 
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
+    # 1. Нормалізація дат (важливо: до 1-го числа місяця!)
+    filtered_df['период'] = pd.to_datetime(filtered_df['период'], errors='coerce')
+    filtered_df = filtered_df.dropna(subset=['период'])
+    filtered_df['период'] = filtered_df['период'].dt.to_period('M').dt.to_timestamp()
 
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-        used_months = [m for m in used_months if m in selected_period]
+    # 2. Фільтрація вибраного періоду
+    if selected_period is not None:
+        sel_p = pd.to_datetime(selected_period).to_period('M').to_timestamp()
+        filtered_df = filtered_df[filtered_df['период'].isin(sel_p)]
 
-    pivot_qty = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='кол-во',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )[used_months + ['Итого']].round(0)
+    if filtered_df.empty:
+        return None, None, None, []
 
-    pivot_sum = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='сумма',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )[used_months + ['Итого']].round(0)
+    # 3. Підготовка числових даних
+    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
+    sum_col = 'сумма' if 'сумма' in filtered_df.columns else 'Сумма СИП'
+    filtered_df[sum_col] = pd.to_numeric(filtered_df[sum_col], errors='coerce').fillna(0)
 
-    return filtered_df, pivot_qty, pivot_sum, used_months
+    def make_pivot(val_column):
+        pivot = pd.pivot_table(
+            filtered_df,
+            index='Наименование товаров',
+            columns='период',
+            values=val_column,
+            aggfunc='sum',
+            fill_value=0,
+            margins=True,
+            margins_name='Итого'
+        )
+        return finalize_report(pivot)
 
-# def plot_top_items(filtered_df, used_months, top_n=5):
-#     top_items = (
-#         filtered_df.groupby('Наименование товаров')['сумма']
-#         .sum()
-#         .sort_values(ascending=False)
-#         .head(top_n)
-#         .index
-#     )
-
-#     top_df = filtered_df[filtered_df['Наименование товаров'].isin(top_items)].copy()
-#     top_df['период'] = pd.Categorical(top_df['период'], categories=used_months, ordered=True)
-
-#     grouped = top_df.groupby(['период', 'Наименование товаров']).agg({
-#         'сумма': 'sum',
-#         'кол-во': 'sum'
-#     }).reset_index()
-
-    # fig = go.Figure()
-    # for name in top_items:
-    #     product_data = grouped[grouped['Наименование товаров'] == name]
-    #     fig.add_trace(go.Bar(
-    #         x=product_data['период'],
-    #         y=product_data['сумма'],
-    #         name=name,
-    #         text=product_data['кол-во'],
-    #         textposition='outside',
-    #         textangle=-90,
-    #         textfont=dict(size=12),
-    #     ))
-
-    # fig.update_layout(
-    #     barmode='group',
-    #     xaxis_title="Місяць",
-    #     yaxis_title="Сума",
-    #     xaxis=dict(categoryorder='array', categoryarray=used_months),
-    #     legend_title="Товари",
-    #     uniformtext_minsize=8,
-    #     uniformtext_mode='hide',
-    # )
-    # return fig
+    pivot_qty = make_pivot('кол-во')
+    pivot_sum = make_pivot(sum_col)
+    
+    used_labels = [c for c in pivot_qty.columns if c != 'Итого']
+    return filtered_df, pivot_qty, pivot_sum, used_labels

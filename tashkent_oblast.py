@@ -1,521 +1,90 @@
 import pandas as pd
+from utils import MONTH_MAP
 
-def generate_tashkent_oblast_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
+# Список районів області для фільтрації
+OBLAST_DISTRICTS = [
+    'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
+    'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
+    'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
+]
+
+def _generate_pivot_base(df, districts, value_column, selected_period=None, divide_by=1):
+    """Універсальна функція: правильні розрахунки + робота з датами."""
+    df = df.copy()
     
-    # Фільтруємо дані для району "Ташкент" і виводимо діагностику
-    filtered_df = df[df['район'] == 'Ташкент'].copy()
-    if filtered_df.empty:
-        print("Попередження: Жодних даних не знайдено для району 'Ташкент'. Перевірте значення в колонці 'район'.")
+    # 1. Підготовка дат
+    df['период'] = pd.to_datetime(df['период'], errors='coerce')
+    df = df.dropna(subset=['период', 'Наименование товаров'])
+    
+    # Нормалізація дат до 1-го числа
+    df['период'] = df['период'].dt.to_period('M').dt.to_timestamp()
+
+    # 2. Фільтрація за районами
+    if isinstance(districts, str):
+        filtered_df = df[df['район'] == districts].copy()
     else:
-        print(f"Знайдено {len(filtered_df)} записів для району 'Ташкент'. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'кол-во' у числовий тип
-    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'кол-во']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
+        filtered_df = df[df['район'].isin(districts)].copy()
+        
+    if filtered_df.empty:
+        return pd.DataFrame()
+
+    # 3. Перетворення значень у числовий формат
+    filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
+
+    # 4. Фільтрація за вибраним періодом
+    if selected_period is not None:
+        sel_p = pd.to_datetime(selected_period).to_period('M').to_timestamp()
+        filtered_df = filtered_df[filtered_df['период'].isin(sel_p)]
+
+    if filtered_df.empty:
+        return pd.DataFrame()
+
+    # 5. Створення зведеної таблиці
     pivot_table = pd.pivot_table(
         filtered_df,
         index='Наименование товаров',
         columns='период',
-        values='кол-во',
+        values=value_column,
         aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
+        fill_value=0
     )
+
+    # 6. Розрахунок підсумків та ділення
+    if divide_by != 1:
+        pivot_table = pivot_table / divide_by
+
+    # Додаємо "Итого"
+    pivot_table['Итого'] = pivot_table.sum(axis=1)
+    total_row = pivot_table.sum(axis=0).to_frame().T
+    total_row.index = ['Итого']
+    pivot_table = pd.concat([pivot_table, total_row])
+
+    # 7. Хронологічне сортування
+    date_cols = sorted([c for c in pivot_table.columns if isinstance(c, pd.Timestamp)])
+    pivot_table = pivot_table.reindex(columns=date_cols + ['Итого'])
+
+    # 8. Форматування заголовків (Російська мова)
+    new_labels = {}
+    for col in pivot_table.columns:
+        if isinstance(col, pd.Timestamp):
+            eng_month = col.strftime('%B')
+            ru_month = MONTH_MAP.get(eng_month, eng_month)
+            new_labels[col] = f"{ru_month} {col.year}"
     
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
+    # Округлюємо та перетворюємо в int
+    pivot_table = pivot_table.rename(columns=new_labels).apply(lambda x: x.round(0).astype(int))
+
     return pivot_table
 
-def generate_tashkent_oblast_sum_sip_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Фільтруємо дані для району "Ташкент" і виводимо діагностику
-    filtered_df = df[df['район'] == 'Ташкент'].copy()
-    if filtered_df.empty:
-        print("Попередження: Жодних даних не знайдено для району 'Ташкент'. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для району 'Ташкент'. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'Сумма СИП' у числовий тип
-    filtered_df['Сумма СИП'] = pd.to_numeric(filtered_df['Сумма СИП'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'Сумма СИП']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='Сумма СИП',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
+# Функції-обгортки для області
+def generate_other_districts_pivot(df, p=None):
+    return _generate_pivot_base(df, OBLAST_DISTRICTS, 'кол-во', p)
 
-def generate_tashkent_oblast_divided_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Фільтруємо дані для району "Ташкент" і виводимо діагностику
-    filtered_df = df[df['район'] == 'Ташкент'].copy()
-    if filtered_df.empty:
-        print("Попередження: Жодних даних не знайдено для району 'Ташкент'. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для району 'Ташкент'. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'кол-во' у числовий тип
-    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'кол-во']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='кол-во',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Ділимо всі значення на 4, залишаючи 0 там, де значення вже 0
-    pivot_table = pivot_table.where(pivot_table == 0, pivot_table / 4)
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
+def generate_other_districts_sum_sip_pivot(df, p=None):
+    return _generate_pivot_base(df, OBLAST_DISTRICTS, 'Сумма СИП', p)
 
-def generate_tashkent_oblast_sum_sip_divided_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Фільтруємо дані для району "Ташкент" і виводимо діагностику
-    filtered_df = df[df['район'] == 'Ташкент'].copy()
-    if filtered_df.empty:
-        print("Попередження: Жодних даних не знайдено для району 'Ташкент'. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для району 'Ташкент'. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'Сумма СИП' у числовий тип
-    filtered_df['Сумма СИП'] = pd.to_numeric(filtered_df['Сумма СИП'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'Сумма СИП']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='Сумма СИП',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Ділимо всі значення на 4, залишаючи 0 там, де значення вже 0
-    pivot_table = pivot_table.where(pivot_table == 0, pivot_table / 4)
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
+def generate_other_districts_divided_pivot(df, p=None):
+    return _generate_pivot_base(df, OBLAST_DISTRICTS, 'кол-во', p, divide_by=4)
 
-def generate_other_districts_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Список районів для фільтрації
-    districts = [
-        'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
-        'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
-        'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
-    ]
-    
-    # Фільтруємо дані для вказаних районів і виводимо діагностику
-    filtered_df = df[df['район'].isin(districts)].copy()
-    if filtered_df.empty:
-        print(f"Попередження: Жодних даних не знайдено для районів {districts}. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для районів {districts}. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'кол-во' у числовий тип
-    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'кол-во']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='кол-во',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
-
-def generate_other_districts_sum_sip_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Список районів для фільтрації
-    districts = [
-        'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
-        'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
-        'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
-    ]
-    
-    # Фільтруємо дані для вказаних районів і виводимо діагностику
-    filtered_df = df[df['район'].isin(districts)].copy()
-    if filtered_df.empty:
-        print(f"Попередження: Жодних даних не знайдено для районів {districts}. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для районів {districts}. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'Сумма СИП' у числовий тип
-    filtered_df['Сумма СИП'] = pd.to_numeric(filtered_df['Сумма СИП'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'Сумма СИП']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='Сумма СИП',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
-
-def generate_other_districts_divided_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Список районів для фільтрації
-    districts = [
-        'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
-        'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
-        'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
-    ]
-    
-    # Фільтруємо дані для вказаних районів і виводимо діагностику
-    filtered_df = df[df['район'].isin(districts)].copy()
-    if filtered_df.empty:
-        print(f"Попередження: Жодних даних не знайдено для районів {districts}. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для районів {districts}. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'кол-во' у числовий тип
-    filtered_df['кол-во'] = pd.to_numeric(filtered_df['кол-во'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'кол-во']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='кол-во',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Ділимо всі значення на 4, залишаючи 0 там, де значення вже 0
-    pivot_table = pivot_table.where(pivot_table == 0, pivot_table / 4)
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
-
-def generate_other_districts_sum_sip_divided_pivot(df, selected_period=None):
-    # Перевіряємо наявність колонки 'район'
-    if 'район' not in df.columns:
-        raise KeyError("Колонка 'район' відсутня в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Список районів для фільтрації
-    districts = [
-        'Алмалык', 'Ангрен', 'Ахангаран', 'Бекабад', 'Бостанлыкский', 'Бука',
-        'Газалкент', 'Зангиата', 'Келес', 'Кибрай', 'Коканд', 'Паркент',
-        'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
-    ]
-    
-    # Фільтруємо дані для вказаних районів і виводимо діагностику
-    filtered_df = df[df['район'].isin(districts)].copy()
-    if filtered_df.empty:
-        print(f"Попередження: Жодних даних не знайдено для районів {districts}. Перевірте значення в колонці 'район'.")
-    else:
-        print(f"Знайдено {len(filtered_df)} записів для районів {districts}. Унікальні значення 'район': {df['район'].dropna().unique()}")
-    
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
-    
-    # Перетворюємо 'Сумма СИП' у числовий тип
-    filtered_df['Сумма СИП'] = pd.to_numeric(filtered_df['Сумма СИП'], errors='coerce').fillna(0)
-    
-    # Перевіряємо наявність колонок
-    required_columns = ['Наименование товаров', 'период', 'Сумма СИП']
-    if not all(col in filtered_df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Видаляємо записи з пропусками в 'Наименование товаров' або 'период'
-    filtered_df = filtered_df.dropna(subset=['Наименование товаров', 'период'])
-    
-    # Фільтруємо за вибраним списком періодів, якщо задано
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        filtered_df,
-        index='Наименование товаров',
-        columns='период',
-        values='Сумма СИП',
-        aggfunc='sum',
-        fill_value=0,
-        margins=True,
-        margins_name='Итого'
-    )
-    
-    # Ділимо всі значення на 4, залишаючи 0 там, де значення вже 0
-    pivot_table = pivot_table.where(pivot_table == 0, pivot_table / 4)
-    
-    # Сортуємо стовпці (періоди) за порядком
-    used_months = sorted(filtered_df['период'].dropna().unique(), key=lambda x: month_order.index(x))
-    pivot_table = pivot_table.reindex(columns=used_months + ['Итого']).round(0)
-    
-    # Переносимо 'Итого' в кінець індексу
-    if 'Итого' in pivot_table.index:
-        idx = pivot_table.index.tolist()
-        idx.remove('Итого')
-        idx.append('Итого')
-        pivot_table = pivot_table.reindex(idx)
-    
-    return pivot_table
+def generate_other_districts_sum_sip_divided_pivot(df, p=None):
+    return _generate_pivot_base(df, OBLAST_DISTRICTS, 'Сумма СИП', p, divide_by=4)

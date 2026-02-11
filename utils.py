@@ -1,4 +1,5 @@
 # utils.py  ← лежить в тій самій папці, що й твій heel_app.py
+import pandas as pd
 
 БАДЫ = [
     "Витрум ретинорм капс. №90",
@@ -24,3 +25,36 @@
     "Церебрум композитум р-р д/инъек 2,2мл №10",
     "Энгистол таблетки № 50"
 ]
+
+MONTH_MAP = {
+    'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
+    'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
+    'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
+    'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь'
+}
+
+def format_pivot_titles_ru(pivot_df):
+    """Перекладає англійські назви місяців у заголовках на російські."""
+    if pivot_df.empty: return pivot_df
+    new_cols = {}
+    for col in pivot_df.columns:
+        if isinstance(col, pd.Timestamp):
+            eng_month = col.strftime('%B')
+            ru_month = MONTH_MAP.get(eng_month, eng_month)
+            new_cols[col] = f"{ru_month} {col.year}"
+    return pivot_df.rename(columns=new_cols)
+
+def finalize_report(pivot):
+    """Сортування, підсумки та переклад."""
+    if pivot.empty: return pivot
+    
+    # Сортування колонок-дат (залишаємо 'Итого' в кінці)
+    date_cols = sorted([c for c in pivot.columns if isinstance(c, pd.Timestamp)])
+    final_cols = date_cols + (['Итого'] if 'Итого' in pivot.columns else [])
+    pivot = pivot.reindex(columns=final_cols)
+    
+    # Переклад місяців
+    pivot = format_pivot_titles_ru(pivot)
+    
+    # Округлення та цілі числа
+    return pivot.fillna(0).round(0).astype(int)

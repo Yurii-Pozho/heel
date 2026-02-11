@@ -1,58 +1,65 @@
 import pandas as pd
-from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
+from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ, MONTH_MAP
 
-# month_order залишається тут
-month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-
-# ─────────────────────── НОВА ФУНКЦІЯ (повністю безпечна) ───────────────────────
 def create_pivot_by_group(df, selected_period=None):
     df = df.copy()
-    df['период'] = pd.Categorical(df['период'], categories=month_order, ordered=True)
+    
+    # 1. ПЕРЕТВОРЕННЯ: перетворюємо період на справжню дату та нормалізуємо
+    df['период'] = pd.to_datetime(df['период'], errors='coerce')
+    df = df.dropna(subset=['период'])
+    df['период'] = df['период'].dt.to_period('M').dt.to_timestamp()
 
-    # фільтр по періоду
+    # 2. ФІЛЬТР
     if selected_period:
+        selected_period_dt = pd.to_datetime(selected_period).to_period('M').to_timestamp()
         if isinstance(selected_period, list):
-            df = df[df['период'].isin(selected_period)]
+            df = df[df['период'].isin(selected_period_dt)]
         else:
-            df = df[df['период'] == selected_period]
+            df = df[df['период'] == selected_period_dt]
 
+    # Перетворюємо показники в числа
     df['кол-во'] = pd.to_numeric(df['кол-во'], errors='coerce').fillna(0)
     df['Сумма СИП'] = pd.to_numeric(df['Сумма СИП'], errors='coerce').fillna(0)
 
-    used_months = sorted(
-        df[df['кол-во'] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
-    )
+    # 3. СОРТУВАННЯ
+    used_months = sorted(df[df['кол-во'] > 0]['период'].unique())
+
+    # Допоміжна функція для форматування назви стовпця (Timestamp -> Ru Text)
+    def get_ru_label(ts):
+        if not isinstance(ts, pd.Timestamp): return ts
+        eng_month = ts.strftime('%B')
+        ru_month = MONTH_MAP.get(eng_month, eng_month)
+        return f"{ru_month} {ts.year}"
 
     def make_pivot(group_df):
         if group_df.empty:
-            cols = used_months + ['Итого'] if used_months else ['Итого']
+            cols = [get_ru_label(m) for m in used_months] + ['Итого'] if used_months else ['Итого']
             empty = pd.DataFrame(0, index=['Итого'], columns=cols, dtype=int)
             return empty, empty.copy()
 
-        # кількість
-        qty = pd.pivot_table(group_df, index='Наименование товаров', columns='период',
-                             values='кол-во', aggfunc='sum', fill_value=0)
-        qty = qty.reindex(columns=used_months, fill_value=0)
-        qty['Итого'] = qty.sum(axis=1)
-        total_qty = qty.sum().to_frame().T
-        total_qty.index = ['Итого']
-        qty = pd.concat([qty, total_qty]).round(0).astype(int)
+        def process_val(val_col):
+            pivot = pd.pivot_table(group_df, index='Наименование товаров', columns='период',
+                                 values=val_col, aggfunc='sum', fill_value=0)
+            pivot = pivot.reindex(columns=used_months, fill_value=0)
+            
+            # Перейменування стовпців на російську
+            pivot.columns = [get_ru_label(c) for c in pivot.columns]
+            
+            # Підсумки
+            pivot['Итого'] = pivot.sum(axis=1)
+            total_row = pivot.sum().to_frame().T
+            total_row.index = ['Итого']
+            return pd.concat([pivot, total_row]).round(0).astype(int)
 
-        # сума
-        suma = pd.pivot_table(group_df, index='Наименование товаров', columns='период',
-                              values='Сумма СИП', aggfunc='sum', fill_value=0)
-        suma = suma.reindex(columns=used_months, fill_value=0)
-        suma['Итого'] = suma.sum(axis=1)
-        total_suma = suma.sum().to_frame().T
-        total_suma.index = ['Итого']
-        suma = pd.concat([suma, total_suma]).round(0).astype(int)
-
+        qty = process_val('кол-во')
+        suma = process_val('Сумма СИП')
         return qty, suma
 
-    # дві групи
+    # Розподіл по групах
     qty_bad, sum_bad = make_pivot(df[df['Наименование товаров'].isin(БАДЫ)])
     qty_lek, sum_lek = make_pivot(df[df['Наименование товаров'].isin(ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ)])
 
-    return qty_bad, sum_bad, qty_lek, sum_lek, used_months
+    # Повертаємо російські назви для UI слайдера
+    used_months_labels = [get_ru_label(m) for m in used_months]
+
+    return qty_bad, sum_bad, qty_lek, sum_lek, used_months_labels

@@ -1,9 +1,23 @@
 import pandas as pd
+from utils import MONTH_MAP
 
-month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+# --- СПИСКИ ТОВАРІВ ---
+PHARMACEUTICALS = [
+    'Вибуркол супп рект № 12', 'Дискус композитум р-р для инъекций 2,2 мл № 5', 
+    'Лимфомиозот амп 1,1 мл № 5', 'Лимфомиозот капли 30мл', 'Ньюрексан таблетки № 25', 
+    'Ньюрексан таблетки № 50', 'Траумель С амп 2,2 мл № 5', 'Траумель С мазь 50г', 
+    'Траумель С р-р для инъекций 2,2 мл № 100', 'Траумель С таблетки № 50', 
+    'Цель Т амп 2 мл № 100', 'Цель Т амп № 5', 'Цель Т мазь 50г', 'Цель Т таблетки № 50', 
+    'Церебрум композитум р-р д/инъек 2,2мл №10', 'Энгистол таблетки № 50',
+]
 
-# Мапінг МП → райони
+SUPPLEMENTS_FOR_MP_BONUS = [
+    'Витрум ретинорм капс. №90',
+    'Ксефомиелин таб. №30',
+    'Синулан Форте таб. №30'
+]
+
+# --- МАПІНГ РАЙОНІВ ДЛЯ ЗВИЧАЙНИХ МП (ЛІКИ) ---
 mp_district_mapping = {
     'Отабек': ['Мирабадский', 'Яшнабадский', 'Яккасарайский', 'Бектимирский'],
     'Шахноза': ['Мирзо-Улугбекский', 'Юнусабадский'],
@@ -14,73 +28,58 @@ mp_district_mapping = {
     'вакант Самарканд': ['Самарканд']
 }
 
-def calculate_district_heatmap(df, districts, selected_period=None, value_column='кол-во'):
-    """
-    Створює зведену таблицю для теплової карти для списку районів, агрегуючи по товарах.
-    
-    Parameters:
-    -----------
-    df: DataFrame з даними (аркуш 'Продажи')
-    districts: список районів
-    selected_period: список періодів або None для всіх періодів
-    value_column: стовпець для агрегації ('кол-во' або 'Сумма СИП')
-    
-    Returns:
-    --------
-    pandas.DataFrame: зведена таблиця з районами (індекс) і періодами (стовпці)
-    """
-    required_columns = ['Наименование товаров', 'период', 'район', value_column]
-    if not all(col in df.columns for col in required_columns):
-        raise KeyError(f"Колонки {required_columns} мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
-    
-    # Копіюємо дані
+# --- МАПІНГ ДЛЯ ФОКУС-МЕНЕДЖЕРІВ (БАДИ) ---
+FOCUS_MANAGERS_AND_DISTRICTS = {
+    'Бобоев Алишер': ['Самарканд'],
+    'Мирзаева Гавхар Абдуразаковна': ['Мирабадский', 'Мирзо-Улугбекский'],
+    'Исмоилова Нозима Зокиржон кизи': ['Чиланзарский', 'Яшнабадский', 'Яккасарайский'],
+    'Файзиева Дильфуза Дилшод кизи': ['Шайхантахурский', 'Алмазарский', 'Сергелийский'],
+    'Нурутдинова Эвилина': ['Учтепинский', 'Юнусабадский']
+}
+
+# --- ПІДГОТОВКА ОБ'ЄДНАНОГО МАПІНГУ ДЛЯ ТЕПЛОВОЇ КАРТИ ---
+# Ми додаємо суфікси, щоб розрізняти типи продажів в одному районі
+DRUGS_MAP = {f"{name} (HEEL)": dists for name, dists in mp_district_mapping.items()}
+FOCUS_MAP = {f"{name} (БАДы)": dists for name, dists in FOCUS_MANAGERS_AND_DISTRICTS.items()}
+
+# Додаємо вакант Бади окремо
+FOCUS_MAP["вакант Бады (БАДы)"] = ['Мирабадский', 'Чиланзарский', 'Юнусабадский']
+
+ALL_MP_DISTRICTS = {**DRUGS_MAP, **FOCUS_MAP}
+
+def calculate_district_heatmap(df, districts, selected_period, mp_display_name):
     df = df.copy()
-    df['период'] = pd.Categorical(df['период'], categories=month_order, ordered=True)
     
-    # Фільтрація за періодом
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = df[df['период'].isin(selected_period)]
-        else:
-            filtered_df = df[df['период'] == selected_period]
+    # 1. Підготовка дат
+    df['период'] = pd.to_datetime(df['период'], errors='coerce')
+    df = df.dropna(subset=['период'])
+    df['период'] = df['период'].dt.to_period('M').dt.to_timestamp()
+    
+    # 2. ФІЛЬТРАЦІЯ ЗА ТИПОМ ТОВАРУ (Вирішує проблему перетину районів)
+    if "(БАДы)" in mp_display_name:
+        df = df[df['Наименование товаров'].isin(SUPPLEMENTS_FOR_MP_BONUS)]
     else:
-        filtered_df = df
+        df = df[df['Наименование товаров'].isin(PHARMACEUTICALS)]
     
-    # Перетворюємо значення в числові
-    filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
+    # 3. Фільтрація за періодом та районами
+    df = df[df['период'].isin(selected_period)]
+    df = df[df['район'].isin(districts)]
     
-    # Фільтруємо за районами
-    district_subset = filtered_df[filtered_df['район'].isin(districts)]
-    
-    if district_subset.empty:
+    if df.empty:
         return pd.DataFrame()
     
-    # Групуємо по району, періоду, підсумовуючи по товарах
-    grouped_df = district_subset.groupby(['район', 'период'])[value_column].sum().reset_index()
-    
-    # Визначаємо місяці з ненульовими даними
-    used_months = sorted(
-        grouped_df[grouped_df[value_column] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
+    # 4. Створення зведеної таблиці
+    df['кол-во'] = pd.to_numeric(df['кол-во'], errors='coerce').fillna(0)
+    pivot = pd.pivot_table(
+        df, index='район', columns='период', values='кол-во', 
+        aggfunc='sum', fill_value=0
     )
     
-    if not used_months:
-        return pd.DataFrame()
+    # Сортування колонок та переклад місяців
+    pivot = pivot.reindex(columns=sorted(pivot.columns))
+    pivot.columns = [f"{MONTH_MAP.get(c.strftime('%B'), c.strftime('%B'))} {c.year}" for c in pivot.columns]
     
-    # Створюємо зведену таблицю
-    pivot_table = pd.pivot_table(
-        grouped_df,
-        index='район',
-        columns='период',
-        values=value_column,
-        aggfunc='sum',
-        fill_value=0
-    )
+    # Сортування районів за списком менеджера
+    pivot = pivot.reindex(index=[d for d in districts if d in pivot.index])
     
-    # Сортуємо за місяцями
-    pivot_table = pivot_table.reindex(columns=used_months)
-    
-    # Сортуємо райони за порядком у districts
-    pivot_table = pivot_table.reindex(index=[d for d in districts if d in pivot_table.index])
-    
-    return pivot_table
+    return pivot

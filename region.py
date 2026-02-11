@@ -1,82 +1,57 @@
 import pandas as pd
-
-month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+from utils import MONTH_MAP
 
 def generate_region_period_pivot(df, selected_period=None, value_column='кол-во'):
     """
-    Створює зведену таблицю для регіонів і періодів за обраним показником (кол-во або Сумма СИП).
-    
-    Parameters:
-        df: DataFrame з даними
-        selected_period: список періодів або None для всіх періодів
-        value_column: стовпець для агрегації ('кол-во' або 'Сумма СИП')
-    Returns:
-        pivot_table: зведена таблиця
+    Створює зведену таблицю для регіонів і періодів на основі реальних дат.
     """
-    # Фільтруємо дані, виключаючи джерела 'Первичка' і 'Первичка минус'
-    filtered_df = df[~df['источник'].isin(['Первичка', 'Первичка минус'])].copy()
+    # 1. Фільтрація джерел
+    filtered_df = df[~df['источник'].isin(['Первичка', 'Первичка Минус'])].copy()
     
-    # Перетворюємо 'период' у категоріальний тип із правильним порядком
-    filtered_df['период'] = pd.Categorical(filtered_df['период'], categories=month_order, ordered=True)
+    # 2. Очищення дат та показників
+    filtered_df['период'] = pd.to_datetime(filtered_df['период'], errors='coerce')
+    filtered_df = filtered_df.dropna(subset=['период', 'регион', 'район'])
     
-    # Фільтрація за вибраним діапазоном періодів
-    if selected_period:
-        if isinstance(selected_period, list):
-            filtered_df = filtered_df[filtered_df['период'].isin(selected_period)]
-        else:
-            filtered_df = filtered_df[filtered_df['период'] == selected_period]
-    
-    # Перетворюємо обраний стовпець у числовий тип
+    # Нормалізація до початку місяця
+    filtered_df['период'] = filtered_df['период'].dt.to_period('M').dt.to_timestamp()
     filtered_df[value_column] = pd.to_numeric(filtered_df[value_column], errors='coerce').fillna(0)
     
-    # Перевіряємо наявність колонок 'регион' і 'район'
-    if 'регион' not in filtered_df.columns or 'район' not in filtered_df.columns:
-        raise KeyError(f"Колонки 'регион' і 'район' мають бути в датафреймі. Доступні колонки: {list(df.columns)}")
+    # 3. Фільтрація за періодом
+    if selected_period is not None:
+        selected_period_dt = pd.to_datetime(selected_period).to_period('M').to_timestamp()
+        filtered_df = filtered_df[filtered_df['период'].isin(selected_period_dt)]
     
-    # Видаляємо записи з пропусками в 'регион' або 'район'
-    filtered_df = filtered_df.dropna(subset=['регион', 'район'])
+    if filtered_df.empty:
+        return pd.DataFrame()
+
+    # 4. Об'єднання регіону та району
+    filtered_df['регион, район'] = filtered_df['регион'].astype(str) + ', ' + filtered_df['район'].astype(str)
     
-    # Отримуємо унікальні комбінації 'регион' і 'район'
-    valid_combinations = filtered_df[['регион', 'район']].drop_duplicates()
-    
-    # Фільтруємо дані, щоб залишити лише дійсні комбінації
-    filtered_df = filtered_df.merge(
-        valid_combinations,
-        on=['регион', 'район'],
-        how='inner'
-    )
-    
-    # Об’єднуємо 'регион' і 'район' у нову колонку 'регион, район'
-    filtered_df['регион, район'] = filtered_df['регион'] + ', ' + filtered_df['район']
-    
-    # Визначаємо місяці, які реально є в даних (з ненульовими значеннями)
-    used_months = sorted(
-        filtered_df[filtered_df[value_column] > 0]['период'].dropna().unique(),
-        key=lambda x: month_order.index(x)
-    )
-    
-    if not used_months:
-        return pd.DataFrame()  # Повертаємо порожній DataFrame, якщо немає даних
-    
-    # Створюємо зведену таблицю без автоматичного "Итого"
+    # 5. Формування зведеної таблиці
     pivot_table = pd.pivot_table(
         filtered_df,
         index='регион, район',
         columns='период',
         values=value_column,
         aggfunc='sum',
-        fill_value=0,
-        margins=False
+        fill_value=0
     )
     
-    # Сортуємо стовпці за наявними місяцями
-    pivot_table = pivot_table.reindex(columns=used_months)
+    # Сортування колонок-дат
+    pivot_table = pivot_table.reindex(columns=sorted(pivot_table.columns))
     
-    # Додаємо "Итого" вручну
-    pivot_table['Итого'] = pivot_table.sum(axis=1).round(0)
+    # 6. Розрахунок підсумків
+    pivot_table['Итого'] = pivot_table.sum(axis=1)
     total_row = pivot_table.sum(axis=0).to_frame().T
     total_row.index = ['Итого']
-    pivot_table = pd.concat([pivot_table, total_row]).round(0)
-    
-    return pivot_table
+    pivot_table = pd.concat([pivot_table, total_row])
+
+    # 7. ФОРМАТУВАННЯ (Російські назви)
+    new_columns = {}
+    for col in pivot_table.columns:
+        if isinstance(col, pd.Timestamp):
+            eng_month = col.strftime('%B')
+            ru_month = MONTH_MAP.get(eng_month, eng_month)
+            new_columns[col] = f"{ru_month} {col.year}"
+            
+    return pivot_table.rename(columns=new_columns).round(0).astype(int)
