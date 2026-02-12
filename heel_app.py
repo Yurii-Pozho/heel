@@ -4,20 +4,17 @@ from eco_lec_sales import process_data
 from first_second_first import create_pivot_by_group
 from source import generate_source_pivots
 from region import generate_region_period_pivot
-from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot
-from tashkent import generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
-from tashkent_oblast import generate_other_districts_divided_pivot, generate_other_districts_pivot
-from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot,OBLAST_DISTRICTS
+from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot,generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
+from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot,OBLAST_DISTRICTS,generate_other_districts_divided_pivot, generate_other_districts_pivot
 from mp import FOCUS_MANAGERS_AND_DISTRICTS, is_excluded,is_focus_manager,calculate_excluded_mp_pivot, calculate_mp_pivot_with_bonus,calculate_focus_mp_pivot
+from heatmap import calculate_district_heatmap, mp_district_mapping,ALL_MP_DISTRICTS
+from region_buds import calculate_regional_pivot,prep_df,SUPPLEMENTS_FOR_MP_BONUS
 from stocks import calculate_source_pivot
-from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ
-from utils import MONTH_MAP 
+from utils import БАДЫ, ЛЕКАРСТВЕННЫЕ_ПРЕПАРАТЫ,MONTH_MAP 
 import seaborn as sns
 import matplotlib.pyplot as plt
-import io
 import base64
 from pathlib import Path
-from heatmap import calculate_district_heatmap, mp_district_mapping,ALL_MP_DISTRICTS
 
 
 st.set_page_config(layout="wide")
@@ -127,14 +124,15 @@ tabs = st.tabs([
     "📋 Данные продаж",
     "📋 Данные стоков",
     "📈 Остатки",
-    "📈 Первичка + вторичка - первичка",
+    "🏭 Первичка + вторичка - первичка",
     "📈 Источники по периодам",
     "🌐 Eco Lec продажи",
-    "📈 Регионы",
+    "🏢 Регионы",
     "📊 Ташкент",
     "📊 Ташкентская область",
-    "📈 МП (HEEL)", 
+    "⚕️ МП (HEEL)", 
     "💊 МП (БАДы)",
+    "🏢 Регионы (БАДы)",
     "🌆 Тепловая карта по районам"
 ])
 
@@ -142,7 +140,6 @@ tabs = st.tabs([
 with tabs[0]:
     st.markdown("### Данные продажи")
     st.dataframe(sales_df, use_container_width=True)
-
 # Вкладка для даних стоків
 with tabs[1]:
     st.markdown("### Данные остатки")
@@ -150,7 +147,6 @@ with tabs[1]:
         st.dataframe(stocks_df, use_container_width=True)
     else:
         st.warning("Аркуш 'Стоки' не знайдено в файлі Excel.")
-
 # Сводная стоки        
 with tabs[2]:
     st.markdown("### Сводная таблица по источникам (Стоки)")
@@ -192,7 +188,7 @@ with tabs[2]:
     
     # Слайдер періоду
     slider_opts = ['Все'] + month_labels
-    p_range = st.select_slider("Диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="src_slider")
+    p_range = st.select_slider("Выберите диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="src_slider")
     
     if p_range[0] == 'Все':
         selected_p = raw_months
@@ -244,7 +240,6 @@ with tabs[2]:
             st.divider()
     else:
         render_source(selected_source)
-
 # Вкладка "Первичка + вторичка - первичка"
 with tabs[3]:
     # 1. Твій CSS для примусового жирного шрифту
@@ -317,7 +312,6 @@ with tabs[3]:
         st.markdown("**Сумма СИП**"); st.table(styled(sum_lek))
     else:
         st.write("Данные по лекарствам отсутствуют")
-
 # Вкладка "Источники по периодам"
 with tabs[4]:
     st.markdown("### Сводная таблица: Продажи по источникам")
@@ -387,8 +381,7 @@ with tabs[4]:
             st.table(style_source_pivot(pivot_sum))
         else:
             st.caption("Нет данных")
-# Вкладка "Eco Lec продажи"
-
+# Вкладка "Eco Lec продажи
 with tabs[5]:
     st.markdown("### Сводная таблица и график по 'Первичка'")
 
@@ -506,7 +499,7 @@ with tabs[6]:
     """, unsafe_allow_html=True)
 
     # Вибір показника
-    val_type = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="reg_radio")
+    val_type = st.radio("", ["Количество", "Сумма СИП"], horizontal=True, key="reg_radio")
     val_col = 'кол-во' if val_type == "Количество" else 'Сумма СИП'
 
     # --- ПІДГОТОВКА ДАНИХ ТА СЛАЙДЕРА ---
@@ -524,7 +517,7 @@ with tabs[6]:
         st.warning("Нет данных по регионам.")
     else:
         slider_opts = ['Все'] + month_labels
-        p_range = st.select_slider("Диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="reg_slider")
+        p_range = st.select_slider("Выберите диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="reg_slider")
         
         if p_range[0] == 'Все':
             selected_p = raw_months
@@ -577,7 +570,6 @@ with tabs[6]:
         else:
             st.warning("Данные за выбранный период отсутствуют.")
 # Решта вкладок (Ташкент, Ташкентская область, МП общее) залишаються без змін
-# Наприклад, вкладка "Ташкент"
 with tabs[7]:
     st.markdown("### Сводные таблицы по г. Ташкент")
 
@@ -604,7 +596,7 @@ with tabs[7]:
     else:
         # Слайдер
         period_range = st.select_slider(
-            "Выберите диапазон дат для анализа (Ташкент)",
+            "Выберите диапазон дат",
             options=['Все'] + actual_labels,
             value=('Все', actual_labels[-1]),
             key="slider_t_dynamic"
@@ -645,7 +637,6 @@ with tabs[7]:
             else:
                 st.info(f"Нет данных за выбранный период.")
             st.divider()
-
 # Вкладка "Ташкентская область" (аналогічно оновлюємо)
 with tabs[8]:
     st.markdown("### Сводная таблица по Ташкентской области")
@@ -672,7 +663,7 @@ with tabs[8]:
         st.warning("В данных не найдено записей для районов Ташкентской области.")
     else:
         period_range = st.select_slider(
-            "Выберите диапазон дат (Область)",
+            "Выберите диапазон дат",
             options=['Все'] + actual_labels,
             value=('Все', actual_labels[-1]),
             key="slider_oblast_dynamic"
@@ -747,7 +738,7 @@ with tabs[9]:
     month_labels_9 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_9]
     slider_options_9 = ['Все'] + month_labels_9
 
-    p_range_9 = st.select_slider("Диапазон периодов", options=slider_options_9, value=('Все', slider_options_9[-1]), key="mp_drugs_slider")
+    p_range_9 = st.select_slider("Выберите диапазон дат", options=slider_options_9, value=('Все', slider_options_9[-1]), key="mp_drugs_slider")
     
     if p_range_9[0] == 'Все':
         selected_period_9 = available_months_9
@@ -787,7 +778,6 @@ with tabs[9]:
             st.divider()
     else:
         render_drug_mp(selected_mp_9)
-
 # --- ВКЛАДКА 10 ---
 with tabs[10]:
     st.markdown("### Сводная таблица по менеджерам (БАДы)")
@@ -798,7 +788,7 @@ with tabs[10]:
     month_labels_10 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_10]
     slider_options_10 = ['Все'] + month_labels_10
 
-    p_range_10 = st.select_slider("Диапазон периодов (Фокус)", options=slider_options_10, value=('Все', slider_options_10[-1]), key="mp_focus_slider")
+    p_range_10 = st.select_slider("Выберите диапазон дат", options=slider_options_10, value=('Все', slider_options_10[-1]), key="mp_focus_slider")
     
     if p_range_10[0] == 'Все':
         selected_period_10 = available_months_10
@@ -834,9 +824,71 @@ with tabs[10]:
             render_focus_mp(mp)
             st.divider()
     else:
-        render_focus_mp(selected_mp_10)       
+        render_focus_mp(selected_mp_10)
         
 with tabs[11]:
+    st.header("🌍 БАДы по регионам")
+
+    # 1. ПІДГОТОВКА ПЕРІОДІВ (Твій стандартний підхід)
+    temp_sales_reg = prep_df(sales_df)
+    available_months_reg = sorted(temp_sales_reg['период'].unique())
+    month_labels_reg = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_reg]
+    
+    p_range_reg = st.select_slider(
+        "Выберите диапазон дат", 
+        options=['Все'] + month_labels_reg, 
+        value=('Все', month_labels_reg[-1]), 
+        key="reg_slider_final"
+    )
+    
+    selected_p_reg = available_months_reg if p_range_reg[0] == 'Все' else \
+                     available_months_reg[month_labels_reg.index(p_range_reg[0]) : month_labels_reg.index(p_range_reg[1]) + 1]
+
+    # 2. ВИБІР МЕТРИКИ
+    metric_reg = st.radio("Показатель расчета", ["Количество", "Сумма СИП"], horizontal=True, key="reg_metric_final")
+    val_col_reg = 'кол-во' if metric_reg == "Количество" else 'Сумма СИП'
+
+    # 3. АВТОМАТИЧНИЙ РОЗПОДІЛ РАЙОНІВ
+    # Визначаємо райони, де є активні МП (не ваканти, не порожньо)
+    mask_active = (
+        sales_df['МП'].notna() & 
+        (sales_df['МП'] != '') & 
+        ~sales_df['МП'].str.contains('вакант', case=False, na=False)
+    )
+    districts_with_mp = sorted(sales_df[mask_active]['район'].unique())
+    
+    # Визначаємо всі інші райони (де тільки ваканти або порожні записи МП)
+    all_dist_in_data = sales_df['район'].unique()
+    districts_no_mp = sorted([d for d in all_dist_in_data if d not in districts_with_mp and pd.notna(d)])
+
+    # 4. ВІДОБРАЖЕННЯ ТАБЛИЦЬ
+    
+    # --- СЕКЦІЯ 1: З МЕНЕДЖЕРАМИ ---
+    st.subheader("✅ Продажи в регионах с МП")
+    if districts_with_mp:
+        df_res_mp = calculate_regional_pivot(sales_df, districts_with_mp, selected_p_reg, val_col_reg)
+        if not df_res_mp.empty and df_res_mp.columns.size > 1: # Перевірка, чи є райони крім 'Итого'
+            st.table(style_table(df_res_mp))
+        else:
+            st.info("Нет продаж выбранных БАДов в этих регионах за указанный период.")
+    else:
+        st.warning("В базе данных не найдено районов с закрепленными МП.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
+
+    # --- СЕКЦІЯ 2: БЕЗ МЕНЕДЖЕРІВ ---
+    st.subheader("⚪ Продажи в свободных регионах (Без МП)")
+    if districts_no_mp:
+        df_res_no_mp = calculate_regional_pivot(sales_df, districts_no_mp, selected_p_reg, val_col_reg)
+        if not df_res_no_mp.empty and df_res_no_mp.columns.size > 1:
+            st.table(style_table(df_res_no_mp))
+        else:
+            st.info("В свободных регионах продаж данных БАДов не зафиксировано.")
+    else:
+        st.write("Все регионы в базе имеют закрепленных МП.")    
+        
+with tabs[12]:
     st.markdown("### 🌆 Тепловая карта по районам")
     st.caption("Фільтрація: профілі '(HEEL)' показують Heel, профілі '(БАДы)' показують БАДи Фокус.")
     
@@ -850,7 +902,7 @@ with tabs[11]:
         st.warning("Недостатньо даних для часової шкали.")
     else:
         p_range = st.select_slider(
-            "Выберите диапазон времени", 
+            "Выберите диапазон дат", 
             options=['Все'] + month_labels, 
             value=('Все', month_labels[-1]),
             key="heatmap_period_slider"
