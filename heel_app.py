@@ -878,7 +878,7 @@ with tabs[11]:
     st.divider()
 
     # --- СЕКЦІЯ 2: БЕЗ МЕНЕДЖЕРІВ ---
-    st.subheader("⚪ Продажи в свободных регионах (Без МП)")
+    st.subheader("⚪ Продажи в свободных регионах (Ваканты / Без МП)")
     if districts_no_mp:
         df_res_no_mp = calculate_regional_pivot(sales_df, districts_no_mp, selected_p_reg, val_col_reg)
         if not df_res_no_mp.empty and df_res_no_mp.columns.size > 1:

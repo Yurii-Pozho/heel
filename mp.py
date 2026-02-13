@@ -28,7 +28,7 @@ FOCUS_MANAGERS_AND_DISTRICTS = {
     'Бобоев Алишер и Хайиталиев Муслимбек': ['Самарканд'],
     'Хилола': ['Мирабадский', 'Учтепинский'],
     'Исмоилова Нозима Зокиржон кизи': ['Чиланзарский', 'Яшнабадский','Яккасарайский'],
-    'Файзиева Дильфуза Дилшод кизи': ['Шайхантахурский', 'Алмазарский', 'Сергелийский','Келес'],
+    'Файзиева Дильфуза Дилшод кизи': ['Шайхантахурский', 'Алмазарский', 'Сергелийский','Сергелийский'],
     'Нурутдинова Эвилина': ['Мирзо-Улугбекский', 'Юнусабадский'],
     'Мехманова Наргиза': ['Бухара']
 }
@@ -87,20 +87,35 @@ def calculate_mp_pivot_with_bonus(df, mp_name, selected_period=None, value_colum
     if is_focus_manager(mp_name): return pd.DataFrame()
     df = prep_df(df)
     df[value_column] = pd.to_numeric(df[value_column], errors='coerce').fillna(0)
+    
     if selected_period is not None:
         df = df[df['период'].isin(selected_period)]
+    
+    # 1. Прямі продажі МП
     direct = df[df['МП'] == mp_name].copy()
     if direct.empty: return pd.DataFrame()
+    
+    # --- ДОДАНО ПЕРЕВІРКУ НА БУХАРУ ---
+    # Якщо МП працює в Бухарі, ми НЕ додаємо бонусні масиви
+    is_bukhara_mp = 'Бухара' in direct['район'].unique()
+    # ---------------------------------
+
     active_months = direct['период'].unique()
     bonus_mask = (df['период'].isin(active_months)) & (df['Наименование товаров'].isin(PHARMACEUTICALS))
-    t_bonus = df[bonus_mask & (df['район'] == 'Ташкент')].copy()
-    o_bonus = df[bonus_mask & (df['район'].isin(TASHKENT_OBLAST_DISTRICTS))].copy()
+    
     combined = direct[['Наименование товаров', 'период', value_column]].copy()
-    for b_df in [t_bonus, o_bonus]:
-        if not b_df.empty:
-            b_grouped = b_df.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
-            b_grouped[value_column] = b_grouped[value_column] / 4
-            combined = pd.concat([combined, b_grouped])
+    
+    # Бонус додається тільки якщо МП НЕ з Бухари
+    if not is_bukhara_mp:
+        t_bonus = df[bonus_mask & (df['район'] == 'Ташкент')].copy()
+        o_bonus = df[bonus_mask & (df['район'].isin(TASHKENT_OBLAST_DISTRICTS))].copy()
+        
+        for b_df in [t_bonus, o_bonus]:
+            if not b_df.empty:
+                b_grouped = b_df.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
+                b_grouped[value_column] = b_grouped[value_column] / 4
+                combined = pd.concat([combined, b_grouped])
+    
     pivot = pd.pivot_table(combined, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
     return finalize_pivot(pivot)
 
