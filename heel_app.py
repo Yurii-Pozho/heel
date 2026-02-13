@@ -6,7 +6,7 @@ from source import generate_source_pivots
 from region import generate_region_period_pivot
 from tashkent import generate_tashkent_pivot, generate_tashkent_sum_sip_pivot,generate_tashkent_divided_pivot, generate_tashkent_sum_sip_divided_pivot
 from tashkent_oblast import generate_other_districts_sum_sip_divided_pivot, generate_other_districts_sum_sip_pivot,OBLAST_DISTRICTS,generate_other_districts_divided_pivot, generate_other_districts_pivot
-from mp import FOCUS_MANAGERS_AND_DISTRICTS, is_excluded,is_focus_manager,calculate_excluded_mp_pivot, calculate_mp_pivot_with_bonus,calculate_focus_mp_pivot
+from mp import get_focus_dict, is_excluded,is_focus_manager, calculate_mp_pivot_with_bonus,calculate_focus_mp_pivot,calculate_excluded_mp_pivot
 from heatmap import calculate_district_heatmap, mp_district_mapping,ALL_MP_DISTRICTS
 from region_buds import calculate_regional_pivot,prep_df,SUPPLEMENTS_FOR_MP_BONUS
 from stocks import calculate_source_pivot
@@ -316,7 +316,7 @@ with tabs[3]:
 with tabs[4]:
     st.markdown("### Сводная таблица: Продажи по источникам")
 
-    # CSS для стилізації (ваш варіант)
+    # CSS для стилізації (залишаємо ваш)
     st.markdown("""
         <style>
             [data-testid="stTable"] th { font-weight: bold !important; color: black !important; background-color: #f0f2f6 !important; }
@@ -324,27 +324,25 @@ with tabs[4]:
         </style>
     """, unsafe_allow_html=True)
 
-    # Підготовка дат для слайдера (нормалізована)
+    # 1. Підготовка періодів (використовуємо вашу логіку)
     temp_df = sales_df.copy()
     temp_df['период'] = pd.to_datetime(temp_df['период'], errors='coerce')
     temp_df = temp_df.dropna(subset=['период'])
     temp_df['период'] = temp_df['период'].dt.to_period('M').dt.to_timestamp()
     
     raw_months = sorted(temp_df['период'].unique())
-    # Російські назви місяців для слайдера
-    from utils import MONTH_MAP
     month_labels = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in raw_months]
 
     if not month_labels:
         st.warning("Нет данных для отображения.")
     else:
-        # Слайдер
+        # Слайдер дат (спільний для обох блоків)
         slider_opts = ['Все'] + month_labels
         period_range = st.select_slider(
-            "Выберите диапазон дат",
+            "Выберите диапазон дат для всех таблиц",
             options=slider_opts,
             value=('Все', slider_opts[-1]),
-            key="src_sales_slider"
+            key="src_sales_slider_global"
         )
         
         if period_range[0] == 'Все':
@@ -354,10 +352,7 @@ with tabs[4]:
             idx_e = month_labels.index(period_range[1])
             selected_period = raw_months[idx_s : idx_e + 1]
 
-        # Отримання таблиць
-        pivot_qty, pivot_sum = generate_source_pivots(sales_df, selected_period)
-
-        # Функція стилізації (ваша)
+        # Допоміжна функція стилізації
         def style_source_pivot(df):
             if df is None or df.empty:
                 return pd.DataFrame().style
@@ -367,20 +362,34 @@ with tabs[4]:
                     .set_properties(**{'background-color': '#f0f0f0', 'color': '#006400'}, subset=pd.IndexSlice[df.index == 'Итого', :])
                     .set_properties(**{'background-color': '#f0f0f0', 'color': '#006400'}, subset=pd.IndexSlice[:, df.columns == 'Итого']))
 
-        # Вивід: Кількість
-        st.markdown("#### Кол-во по источнику")
-        if not pivot_qty.empty:
-            st.table(style_source_pivot(pivot_qty))
-        else:
-            st.caption("Нет данных")
+        # --- БЛОК 1: ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ---
+        st.header("💊 Лекарственные препараты")
+        qty_drugs, sum_drugs = generate_source_pivots(sales_df, selected_period, category='drugs')
+        
+        col1, col2 = st.columns(1), st.columns(1) # Для розділення візуально
+        st.markdown("##### Кол-во (Лекарства)")
+        st.table(style_source_pivot(qty_drugs))
+        
+        st.markdown("##### Сумма СИП (Лекарства)")
+        st.table(style_source_pivot(sum_drugs))
 
-        # Вивід: Сума
-        st.divider()
-        st.markdown("#### Сумма СИП по источнику")
-        if not pivot_sum.empty:
-            st.table(style_source_pivot(pivot_sum))
+        st.markdown("<br><hr><br>", unsafe_allow_html=True) # Великий роздільник
+
+        # --- БЛОК 2: БАДы ---
+        st.header("🌿 БАДы")
+        qty_supps, sum_supps = generate_source_pivots(sales_df, selected_period, category='supplements')
+        
+        st.markdown("##### Кол-во (БАДы)")
+        if not qty_supps.empty:
+            st.table(style_source_pivot(qty_supps))
         else:
-            st.caption("Нет данных")
+            st.info("Нет данных по БАДам за этот период")
+        
+        st.markdown("##### Сумма СИП (БАДы)")
+        if not sum_supps.empty:
+            st.table(style_source_pivot(sum_supps))
+        else:
+            st.info("Нет данных по БАДам за этот период")
 # Вкладка "Eco Lec продажи
 with tabs[5]:
     st.markdown("### Сводная таблица и график по 'Первичка'")
@@ -728,27 +737,34 @@ def style_table(df):
             ])
             .apply(lambda x: ['background-color: #e6f3e6; color: #006400' if (x.name == 'Итого' or c == 'Итого') else '' for c in x.index], axis=1))
 
-# --- ВКЛАДКА 9 ---
+temp_sales_data = sales_df.copy()
+temp_sales_data['период'] = pd.to_datetime(temp_sales_data['период'], errors='coerce')
+all_available_months = sorted(temp_sales_data['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
+month_labels_shared = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in all_available_months]
+
+# --- ВКЛАДКА 9 (Лекарства) ---
+temp_sales_data = sales_df.copy()
+temp_sales_data['период'] = pd.to_datetime(temp_sales_data['период'], errors='coerce')
+all_available_months = sorted(temp_sales_data['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
+month_labels_shared = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in all_available_months]
+
+# --- ВКЛАДКА 9 (Лекарства) ---
 with tabs[9]:
     st.markdown("### Сводная таблица по МП (Лекарственные препараты)")
 
-    temp_sales_9 = sales_df.copy()
-    temp_sales_9['период'] = pd.to_datetime(temp_sales_9['период'], errors='coerce')
-    available_months_9 = sorted(temp_sales_9['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
-    month_labels_9 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_9]
-    slider_options_9 = ['Все'] + month_labels_9
-
-    p_range_9 = st.select_slider("Выберите диапазон дат", options=slider_options_9, value=('Все', slider_options_9[-1]), key="mp_drugs_slider")
+    p_range_9 = st.select_slider("Выберите диапазон дат", options=['Все'] + month_labels_shared, value=('Все', month_labels_shared[-1]), key="mp_drugs_slider")
     
-    if p_range_9[0] == 'Все':
-        selected_period_9 = available_months_9
-    else:
-        idx_s = month_labels_9.index(p_range_9[0])
-        idx_e = month_labels_9.index(p_range_9[1])
-        selected_period_9 = available_months_9[idx_s : idx_e + 1]
+    selected_period_9 = all_available_months if p_range_9[0] == 'Все' else \
+                        all_available_months[month_labels_shared.index(p_range_9[0]) : month_labels_shared.index(p_range_9[1]) + 1]
+
+    # Визначаємо словник для фільтрації focus-менеджерів
+    current_focus_dict_9 = get_focus_dict(selected_period_9)
 
     drug_vacancies = ['вакант', 'вакант Самарканд', 'вакант Кашкадарья']
-    standard_mps = sorted([mp for mp in sales_df['МП'].dropna().unique() if (not is_focus_manager(mp) and not is_excluded(mp)) or mp in drug_vacancies])
+    standard_mps = sorted([
+        mp for mp in sales_df['МП'].dropna().unique() 
+        if (not is_focus_manager(mp, current_focus_dict_9) and not is_excluded(mp)) or mp in drug_vacancies
+    ])
     
     selected_mp_9 = st.selectbox("Выберите МП", ['Все МП'] + standard_mps, key="sel_drugs_mp")
     metric_9 = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="metric_drugs")
@@ -756,21 +772,17 @@ with tabs[9]:
 
     def render_drug_mp(mp_name):
         st.subheader(f"👨‍⚕️ {mp_name}")
-        # ДОДАНО: Динамічне визначення районів з даних
         actual_districts = sales_df[sales_df['МП'] == mp_name]['район'].unique()
         dist_str = ", ".join(filter(None, actual_districts))
-        if dist_str:
-            st.caption(f"📍 Районы: {dist_str}")
+        if dist_str: st.caption(f"📍 Районы: {dist_str}")
 
         if mp_name in drug_vacancies:
             df_res = calculate_excluded_mp_pivot(sales_df, mp_name, selected_period_9, val_col_9)
         else:
-            df_res = calculate_mp_pivot_with_bonus(sales_df, mp_name, selected_period_9, val_col_9)
+            df_res = calculate_mp_pivot_with_bonus(sales_df, mp_name, selected_period_9, val_col_9, current_focus_dict_9)
         
-        if not df_res.empty:
-            st.table(style_table(df_res))
-        else:
-            st.info("Нет данных по указанному периоду")
+        if not df_res.empty: st.table(style_table(df_res))
+        else: st.info("Нет данных")
 
     if selected_mp_9 == "Все МП":
         for mp in standard_mps:
@@ -778,53 +790,44 @@ with tabs[9]:
             st.divider()
     else:
         render_drug_mp(selected_mp_9)
-# --- ВКЛАДКА 10 ---
+
+# --- ВКЛАДКА 10 (БАДы) ---
 with tabs[10]:
     st.markdown("### Сводная таблица по менеджерам (БАДы)")
 
-    temp_sales_10 = sales_df.copy()
-    temp_sales_10['период'] = pd.to_datetime(temp_sales_10['период'], errors='coerce')
-    available_months_10 = sorted(temp_sales_10['период'].dropna().dt.to_period('M').dt.to_timestamp().unique())
-    month_labels_10 = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_10]
-    slider_options_10 = ['Все'] + month_labels_10
-
-    p_range_10 = st.select_slider("Выберите диапазон дат", options=slider_options_10, value=('Все', slider_options_10[-1]), key="mp_focus_slider")
+    p_range_10 = st.select_slider("Выберите диапазон дат", options=['Все'] + month_labels_shared, value=('Все', month_labels_shared[-1]), key="mp_focus_slider")
     
-    if p_range_10[0] == 'Все':
-        selected_period_10 = available_months_10
-    else:
-        idx_s_10 = month_labels_10.index(p_range_10[0])
-        idx_e_10 = month_labels_10.index(p_range_10[1])
-        selected_period_10 = available_months_10[idx_s_10 : idx_e_10 + 1]
+    selected_period_10 = all_available_months if p_range_10[0] == 'Все' else \
+                         all_available_months[month_labels_shared.index(p_range_10[0]) : month_labels_shared.index(p_range_10[1]) + 1]
 
-    focus_mps = sorted(list(FOCUS_MANAGERS_AND_DISTRICTS.keys()) + ['вакант Бады'])
+    # ДИНАМІЧНИЙ ВИБІР СЛОВНИКА
+    current_focus_dict_10 = get_focus_dict(selected_period_10)
+    focus_mps = sorted(list(current_focus_dict_10.keys()) + ['вакант Бады'])
+    
     selected_mp_10 = st.selectbox("Выберите менеджера", ['Все МП'] + focus_mps, key="sel_focus_mp")
     metric_10 = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="metric_focus")
     val_col_10 = 'кол-во' if metric_10 == "Количество" else 'Сумма СИП'
 
-    def render_focus_mp(mp_name):
+    def render_focus_mp(mp_name, f_dict):
         st.subheader(f"👨‍⚕️ {mp_name}")
-        # ДОДАНО: Визначення районів з константи фокус-менеджерів
-        target_districts = FOCUS_MANAGERS_AND_DISTRICTS.get(mp_name, [])
+        target_districts = f_dict.get(mp_name, [])
         dist_str = ", ".join(target_districts) if target_districts else "все районы"
-        st.caption(f"📍 Районы: {dist_str}")
+        st.caption(f"📍 Целевые районы: {dist_str}")
 
         if mp_name == 'вакант Бады':
             df_res = calculate_excluded_mp_pivot(sales_df, mp_name, selected_period_10, val_col_10)
         else:
-            df_res = calculate_focus_mp_pivot(sales_df, mp_name, selected_period_10, val_col_10)
+            df_res = calculate_focus_mp_pivot(sales_df, mp_name, selected_period_10, val_col_10, f_dict)
             
-        if not df_res.empty:
-            st.table(style_table(df_res))
-        else:
-            st.info(f"Нет данных по БАДам ({dist_str})")
+        if not df_res.empty: st.table(style_table(df_res))
+        else: st.info(f"Нет данных по БАДам ({dist_str})")
 
     if selected_mp_10 == "Все МП":
         for mp in focus_mps:
-            render_focus_mp(mp)
+            render_focus_mp(mp, current_focus_dict_10)
             st.divider()
     else:
-        render_focus_mp(selected_mp_10)
+        render_focus_mp(selected_mp_10, current_focus_dict_10)
         
 with tabs[11]:
     st.header("🌍 БАДы по регионам")

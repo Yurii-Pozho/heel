@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from utils import MONTH_MAP
 
-
+# --- КОНСТАНТИ ---
 PHARMACEUTICALS = [
     'Вибуркол супп рект № 12', 'Дискус композитум р-р для инъекций 2,2 мл № 5', 
     'Лимфомиозот амп 1,1 мл № 5', 'Лимфомиозот капли 30мл', 'Ньюрексан таблетки № 25', 
@@ -24,7 +24,7 @@ TASHKENT_OBLAST_DISTRICTS = [
     'Пискент', 'Ташкент область', 'Чиноз', 'Чирчик', 'Янгиюль'
 ]
 
-FOCUS_MANAGERS_AND_DISTRICTS = {
+FOCUS_MANAGERS_2026 = {
     'Бобоев Алишер и Хайиталиев Муслимбек': ['Самарканд'],
     'Хилола': ['Мирабадский', 'Учтепинский'],
     'Исмоилова Нозима Зокиржон кизи': ['Чиланзарский', 'Яшнабадский','Яккасарайский'],
@@ -33,12 +33,27 @@ FOCUS_MANAGERS_AND_DISTRICTS = {
     'Мехманова Наргиза': ['Бухара']
 }
 
+FOCUS_MANAGERS_2025 = {
+    'Бобоев Алишер': ['Самарканд'],
+    'Исмоилова Нозима Зокиржон кизи': ['Чиланзарский', 'Яшнабадский','Яккасарайский'],
+    'Файзиева Дильфуза Дилшод кизи': ['Шайхантахурский', 'Алмазарский', 'Сергелийский'],
+    'Нурутдинова Эвилина': ['Учтепинский', 'Юнусабадский'],
+    'Мирзаева Гавхар Абдуразаковна': ['Мирзо-Улугбекский', 'Мирабадский']
+}
+
 EXCLUDED_MPS = ['Бады', 'Мед.Представитель', 'вакант']
 
-# ────────────────────── ДОПОМІЖНІ ФУНКЦІЇ ──────────────────────
+# --- ДОПОМІЖНІ ФУНКЦІЇ ---
 
-def is_focus_manager(mp_name):
-    return mp_name in FOCUS_MANAGERS_AND_DISTRICTS
+def get_focus_dict(periods):
+    if not periods: return FOCUS_MANAGERS_2026
+    years = {p.year for p in periods}
+    if 2025 in years and 2026 not in years:
+        return FOCUS_MANAGERS_2025
+    return FOCUS_MANAGERS_2026
+
+def is_focus_manager(mp_name, current_dict):
+    return mp_name in current_dict
 
 def is_excluded(mp_name):
     if not mp_name: return False
@@ -63,53 +78,50 @@ def finalize_pivot(pivot, target_index=None):
     total_row = pivot.sum(axis=0).to_frame().T
     total_row.index = ['Итого']
     pivot = pd.concat([pivot, total_row])
-    new_cols = {}
-    for col in pivot.columns:
-        if isinstance(col, pd.Timestamp):
-            eng_m = col.strftime('%B')
-            ru_m = MONTH_MAP.get(eng_m, eng_m)
-            new_cols[col] = f"{ru_m} {col.year}"
+    new_cols = {col: f"{MONTH_MAP.get(col.strftime('%B'), col.strftime('%B'))} {col.year}" 
+                for col in pivot.columns if isinstance(col, pd.Timestamp)}
     return pivot.rename(columns=new_cols).fillna(0).round(0).astype(int)
 
-# ────────────────────── ФУНКЦІЇ РОЗРАХУНКУ ──────────────────────
+# --- ФУНКЦІЇ РОЗРАХУНКУ ---
 
-def calculate_excluded_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во'):
+def calculate_excluded_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во', target_products=None):
+    """
+    Функція для розрахунку продажів вакансій або виключених МП.
+    """
     df = prep_df(df)
     filtered = df[df['МП'] == mp_name].copy()
+    
+    if target_products is not None:
+        filtered = filtered[filtered['Наименование товаров'].isin(target_products)]
+    
     if selected_period is not None:
         filtered = filtered[filtered['период'].isin(selected_period)]
+        
     filtered[value_column] = pd.to_numeric(filtered[value_column], errors='coerce').fillna(0)
     if filtered.empty: return pd.DataFrame()
+    
     pivot = pd.pivot_table(filtered, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
-    return finalize_pivot(pivot)
+    return finalize_pivot(pivot, target_index=target_products)
 
-def calculate_mp_pivot_with_bonus(df, mp_name, selected_period=None, value_column='кол-во'):
-    if is_focus_manager(mp_name): return pd.DataFrame()
+def calculate_mp_pivot_with_bonus(df, mp_name, selected_period, value_column, current_dict):
+    if is_focus_manager(mp_name, current_dict): return pd.DataFrame()
+    
     df = prep_df(df)
     df[value_column] = pd.to_numeric(df[value_column], errors='coerce').fillna(0)
-    
     if selected_period is not None:
         df = df[df['период'].isin(selected_period)]
     
-    # 1. Прямі продажі МП
     direct = df[df['МП'] == mp_name].copy()
     if direct.empty: return pd.DataFrame()
     
-    # --- ДОДАНО ПЕРЕВІРКУ НА БУХАРУ ---
-    # Якщо МП працює в Бухарі, ми НЕ додаємо бонусні масиви
     is_bukhara_mp = 'Бухара' in direct['район'].unique()
-    # ---------------------------------
-
     active_months = direct['период'].unique()
     bonus_mask = (df['период'].isin(active_months)) & (df['Наименование товаров'].isin(PHARMACEUTICALS))
-    
     combined = direct[['Наименование товаров', 'период', value_column]].copy()
     
-    # Бонус додається тільки якщо МП НЕ з Бухари
     if not is_bukhara_mp:
         t_bonus = df[bonus_mask & (df['район'] == 'Ташкент')].copy()
         o_bonus = df[bonus_mask & (df['район'].isin(TASHKENT_OBLAST_DISTRICTS))].copy()
-        
         for b_df in [t_bonus, o_bonus]:
             if not b_df.empty:
                 b_grouped = b_df.groupby(['Наименование товаров', 'период'])[value_column].sum().reset_index()
@@ -119,12 +131,20 @@ def calculate_mp_pivot_with_bonus(df, mp_name, selected_period=None, value_colum
     pivot = pd.pivot_table(combined, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
     return finalize_pivot(pivot)
 
-def calculate_focus_mp_pivot(df, mp_name, selected_period=None, value_column='кол-во'):
-    target_districts = FOCUS_MANAGERS_AND_DISTRICTS.get(mp_name, [])
+def calculate_focus_mp_pivot(df, mp_name, selected_period, value_column, current_dict):
+    target_districts = current_dict.get(mp_name, [])
     df = prep_df(df)
     if selected_period is not None:
         df = df[df['период'].isin(selected_period)]
-    filtered = df[(df['МП'] == mp_name) & (df['район'].isin(target_districts)) & (df['Наименование товаров'].isin(SUPPLEMENTS_FOR_MP_BONUS))].copy()
+    
+    filtered = df[
+        (df['МП'] == mp_name) & 
+        (df['район'].isin(target_districts)) & 
+        (df['Наименование товаров'].isin(SUPPLEMENTS_FOR_MP_BONUS))
+    ].copy()
+    
     filtered[value_column] = pd.to_numeric(filtered[value_column], errors='coerce').fillna(0)
+    if filtered.empty: return pd.DataFrame()
+    
     pivot = pd.pivot_table(filtered, index='Наименование товаров', columns='период', values=value_column, aggfunc='sum', fill_value=0)
     return finalize_pivot(pivot, target_index=SUPPLEMENTS_FOR_MP_BONUS)
