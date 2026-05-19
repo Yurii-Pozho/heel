@@ -137,7 +137,7 @@ tabs = st.tabs([
     "📊 Ташкентская область",
     "⚕️ МП (HEEL)", 
     # "💊 МП (БАДы)",
-    "🏢 Регионы (DORIM 360)",
+    "🏢 Регионы (БАДы)",
     "🌆 Тепловая карта по районам"
 ])
 
@@ -302,7 +302,7 @@ with tabs[3]:
                 .set_properties(**{'background-color': '#f0f0f0', 'color': '#006400'}, subset=pd.IndexSlice[:, df.columns == 'Итого']))
 
     # ====================== ВИВІД ======================
-    st.markdown("### DORIM 360")
+    st.markdown("### БАДЫ")
     if qty_bad is not None and not qty_bad.empty:
         st.markdown("**Количество**"); st.table(styled(qty_bad))
         st.markdown("**Сумма СИП**"); st.table(styled(sum_bad))
@@ -311,7 +311,7 @@ with tabs[3]:
 
     st.divider()
 
-    st.markdown("### HEEL")
+    st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
     if qty_lek is not None and not qty_lek.empty:
         st.markdown("**Количество**"); st.table(styled(qty_lek))
         st.markdown("**Сумма СИП**"); st.table(styled(sum_lek))
@@ -368,7 +368,7 @@ with tabs[4]:
                     .set_properties(**{'background-color': '#f0f0f0', 'color': '#006400'}, subset=pd.IndexSlice[:, df.columns == 'Итого']))
 
         # --- БЛОК 1: ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ---
-        st.header("💊 HEEL")
+        st.header("💊 Лекарственные препараты")
         qty_drugs, sum_drugs = generate_source_pivots(sales_df, selected_period, category='drugs')
         
         col1, col2 = st.columns(1), st.columns(1) # Для розділення візуально
@@ -381,16 +381,16 @@ with tabs[4]:
         st.markdown("<br><hr><br>", unsafe_allow_html=True) # Великий роздільник
 
         # --- БЛОК 2: БАДы ---
-        st.header("🌿 DORIM 360")
+        st.header("🌿 БАДы")
         qty_supps, sum_supps = generate_source_pivots(sales_df, selected_period, category='supplements')
         
-        st.markdown("##### Кол-во (DORIM 360)")
+        st.markdown("##### Кол-во (БАДы)")
         if not qty_supps.empty:
             st.table(style_source_pivot(qty_supps))
         else:
             st.info("Нет данных по БАДам за этот период")
         
-        st.markdown("##### Сумма СИП (DORIM 360)")
+        st.markdown("##### Сумма СИП (БАДы)")
         if not sum_supps.empty:
             st.table(style_source_pivot(sum_supps))
         else:
@@ -478,7 +478,7 @@ with tabs[5]:
         _, qty_lek, sum_lek, _ = process_data(df_lek, selected_period)
 
         # === Вивід: БАДЫ ===
-        st.markdown("### DORIM 360")
+        st.markdown("### БАДЫ")
         if qty_bad is not None and not qty_bad.empty:
             st.markdown("**Количество**")
             st.table(styled(qty_bad)) 
@@ -491,7 +491,7 @@ with tabs[5]:
         st.markdown("---")
 
         # === Вивід: ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ ===
-        st.markdown("### HEEL")
+        st.markdown("### ЛЕКАРСТВЕННЫЕ ПРЕПАРАТЫ")
         if qty_lek is not None and not qty_lek.empty:
             st.markdown("**Количество**")
             st.table(styled(qty_lek))
