@@ -176,3 +176,5 @@ def generate_region_period_pivot(
 
     # 16. Округлення і приведення до int
     return pivot_table.round(0).astype(int)
+
+#  app
