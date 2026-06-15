@@ -103,13 +103,13 @@ def calculate_regional_pivot(df, districts, selected_period=None, value_column='
     if filtered.empty: 
         return pd.DataFrame()
     
-    # 2. Створюємо таблицю: Рядки - Район, Стовпці - Товари
+    # 2. Створюємо таблицю: Рядки - Регіон, Стовпці - Товари
     pivot = pd.pivot_table(
-        filtered, 
-        index='район', 
-        columns='Наименование товаров', 
-        values=value_column, 
-        aggfunc='sum', 
+        filtered,
+        index='регион',
+        columns='Наименование товаров',
+        values=value_column,
+        aggfunc='sum',
         fill_value=0
     )
     

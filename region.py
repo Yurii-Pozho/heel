@@ -26,7 +26,8 @@ def generate_region_period_pivot(
     df,
     selected_period=None,
     value_column='кол-во',
-    drug_column='Наименование товаров'
+    drug_column='Наименование товаров',
+    selected_products=None
 ):
     """
     Створює зведену таблицю для регіонів і періодів на основі реальних дат.
@@ -76,8 +77,9 @@ def generate_region_period_pivot(
     )
 
     # 4. Фільтр тільки по потрібних препаратах
+    products_to_use = selected_products if selected_products else PHARMACEUTICALS
     filtered_df = filtered_df[
-        filtered_df[drug_column].isin(PHARMACEUTICALS)
+        filtered_df[drug_column].isin(products_to_use)
     ].copy()
 
     if filtered_df.empty:
@@ -139,7 +141,7 @@ def generate_region_period_pivot(
     # 11. Формування зведеної таблиці
     pivot_table = pd.pivot_table(
         filtered_df,
-        index='регион, район',
+        index=['регион, район', drug_column],
         columns='период',
         values=value_column,
         aggfunc='sum',
@@ -156,7 +158,7 @@ def generate_region_period_pivot(
 
     # 14. Додаємо підсумковий рядок
     total_row = pivot_table.sum(axis=0).to_frame().T
-    total_row.index = ['Итого']
+    total_row.index = pd.MultiIndex.from_tuples([('Итого', '')], names=pivot_table.index.names)
 
     pivot_table = pd.concat([
         pivot_table,
