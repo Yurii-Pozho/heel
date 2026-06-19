@@ -191,15 +191,16 @@ with tabs[2]:
     v_type = st.radio("Показатель", ["Количество", "Сумма СИП"], horizontal=True, key="src_v_type")
     v_col = 'кол-во' if v_type == "Количество" else 'Сумма СИП'
     
-    # Слайдер періоду
-    slider_opts = ['Все'] + month_labels
-    p_range = st.select_slider("Выберите диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="src_slider")
-    
-    if p_range[0] == 'Все':
+    # Дропдаун вибору дат
+    col_s, col_e = st.columns(2)
+    p_from = col_s.selectbox("Дата от", ['Все'] + month_labels, index=0, key="src_slider_from")
+    p_to   = col_e.selectbox("Дата до", month_labels, index=len(month_labels)-1, key="src_slider_to")
+
+    if p_from == 'Все':
         selected_p = raw_months
     else:
-        idx_s = month_labels.index(p_range[0])
-        idx_e = month_labels.index(p_range[1])
+        idx_s = month_labels.index(p_from)
+        idx_e = month_labels.index(p_to)
         selected_p = raw_months[idx_s : idx_e + 1]
 
     # Вибір джерела
@@ -274,18 +275,15 @@ with tabs[3]:
     else:
         all_labels = ['Все'] + display_labels
 
-        period_range = st.select_slider(
-            "Выберите диапазон дат",
-            options=all_labels,
-            value=(all_labels[0], all_labels[-1]),
-            key="items_period_slider"
-        )
-        
-        if period_range[0] == 'Все':
+        col_s, col_e = st.columns(2)
+        p_from = col_s.selectbox("Дата от", ['Все'] + display_labels, index=0, key="items_slider_from")
+        p_to   = col_e.selectbox("Дата до", display_labels, index=len(display_labels)-1, key="items_slider_to")
+
+        if p_from == 'Все':
             selected_period = raw_months
         else:
-            idx_start = display_labels.index(period_range[0])
-            idx_end = display_labels.index(period_range[1])
+            idx_start = display_labels.index(p_from)
+            idx_end   = display_labels.index(p_to)
             selected_period = raw_months[idx_start : idx_end + 1]
 
         # Розрахунок
@@ -341,20 +339,15 @@ with tabs[4]:
     if not month_labels:
         st.warning("Нет данных для отображения.")
     else:
-        # Слайдер дат (спільний для обох блоків)
-        slider_opts = ['Все'] + month_labels
-        period_range = st.select_slider(
-            "Выберите диапазон дат для всех таблиц",
-            options=slider_opts,
-            value=('Все', slider_opts[-1]),
-            key="src_sales_slider_global"
-        )
-        
-        if period_range[0] == 'Все':
+        col_s, col_e = st.columns(2)
+        p_from = col_s.selectbox("Дата от", ['Все'] + month_labels, index=0, key="src_sales_from")
+        p_to   = col_e.selectbox("Дата до", month_labels, index=len(month_labels)-1, key="src_sales_to")
+
+        if p_from == 'Все':
             selected_period = raw_months
         else:
-            idx_s = month_labels.index(period_range[0])
-            idx_e = month_labels.index(period_range[1])
+            idx_s = month_labels.index(p_from)
+            idx_e = month_labels.index(p_to)
             selected_period = raw_months[idx_s : idx_e + 1]
 
         # Допоміжна функція стилізації
@@ -427,21 +420,15 @@ with tabs[5]:
     if not actual_labels:
         st.warning("В данных 'Первичка' не найдено корректных дат.")
     else:
-        # === Слайдер з твоїми налаштуваннями ===
-        period_options = ['Все'] + actual_labels
-        period_range = st.select_slider(
-            "Выберите диапазон дат",
-            options=period_options,
-            value=('Все', period_options[-1]),
-            key="period_slider_tab5_primary"
-        )
-        
-        # Конвертуємо вибір назад у Timestamp для розрахунків
-        if period_range[0] == 'Все':
+        col_s, col_e = st.columns(2)
+        p_from = col_s.selectbox("Дата от", ['Все'] + actual_labels, index=0, key="tab5_from")
+        p_to   = col_e.selectbox("Дата до", actual_labels, index=len(actual_labels)-1, key="tab5_to")
+
+        if p_from == 'Все':
             selected_period = actual_dates
         else:
-            start_idx = actual_labels.index(period_range[0])
-            end_idx = actual_labels.index(period_range[1])
+            start_idx = actual_labels.index(p_from)
+            end_idx   = actual_labels.index(p_to)
             selected_period = actual_dates[start_idx : end_idx + 1]
 
         # === Твоя функція стилізації (styled) — без змін ===
@@ -530,14 +517,15 @@ with tabs[6]:
     if not month_labels:
         st.warning("Нет данных по регионам.")
     else:
-        slider_opts = ['Все'] + month_labels
-        p_range = st.select_slider("Выберите диапазон дат", options=slider_opts, value=('Все', slider_opts[-1]), key="reg_slider")
-        
-        if p_range[0] == 'Все':
+        col_s, col_e = st.columns(2)
+        p_from = col_s.selectbox("Дата от", ['Все'] + month_labels, index=0, key="reg_from")
+        p_to   = col_e.selectbox("Дата до", month_labels, index=len(month_labels)-1, key="reg_to")
+
+        if p_from == 'Все':
             selected_p = raw_months
         else:
-            idx_s = month_labels.index(p_range[0])
-            idx_e = month_labels.index(p_range[1])
+            idx_s = month_labels.index(p_from)
+            idx_e = month_labels.index(p_to)
             selected_p = raw_months[idx_s : idx_e + 1]
 
         # Фільтр по препаратах
@@ -929,15 +917,16 @@ with tabs[7]:
     available_months_reg = sorted(temp_sales_reg['период'].unique())
     month_labels_reg = [f"{MONTH_MAP.get(m.strftime('%B'), m.strftime('%B'))} {m.year}" for m in available_months_reg]
     
-    p_range_reg = st.select_slider(
-        "Выберите диапазон дат", 
-        options=['Все'] + month_labels_reg, 
-        value=('Все', month_labels_reg[-1]), 
-        key="reg_slider_final"
-    )
-    
-    selected_p_reg = available_months_reg if p_range_reg[0] == 'Все' else \
-                     available_months_reg[month_labels_reg.index(p_range_reg[0]) : month_labels_reg.index(p_range_reg[1]) + 1]
+    col_s, col_e = st.columns(2)
+    p_from_reg = col_s.selectbox("Дата от", ['Все'] + month_labels_reg, index=0, key="reg_final_from")
+    p_to_reg   = col_e.selectbox("Дата до", month_labels_reg, index=len(month_labels_reg)-1, key="reg_final_to")
+
+    if p_from_reg == 'Все':
+        selected_p_reg = available_months_reg
+    else:
+        idx_s = month_labels_reg.index(p_from_reg)
+        idx_e = month_labels_reg.index(p_to_reg)
+        selected_p_reg = available_months_reg[idx_s : idx_e + 1]
 
     # 2. ВИБІР МЕТРИКИ
     metric_reg = st.radio("Показатель расчета", ["Количество", "Сумма СИП"], horizontal=True, key="reg_metric_final")
@@ -950,8 +939,19 @@ with tabs[7]:
     )
 
 
+    # Фільтр по препаратах
+    selected_bads_products = st.multiselect(
+        "Фильтр по препаратам (пусто = все)",
+        options=_SUPP,
+        default=[],
+        key="reg_bads_products_filter"
+    )
+
     # 4. ВІДОБРАЖЕННЯ ТАБЛИЦЬ
-    df_all_bads = calculate_regional_pivot(sales_df, all_bads_districts, selected_p_reg, val_col_reg)
+    df_all_bads = calculate_regional_pivot(
+        sales_df, all_bads_districts, selected_p_reg, val_col_reg,
+        selected_products=selected_bads_products if selected_bads_products else None
+    )
     if not df_all_bads.empty:
         st.table(style_table(df_all_bads))
     else:

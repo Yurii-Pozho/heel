@@ -82,18 +82,20 @@ def style_table(df):
 
 # ────────────────────── 3. ФУНКЦІЇ РОЗРАХУНКУ ──────────────────────
 
-def calculate_regional_pivot(df, districts, selected_period=None, value_column='кол-во'):
+def calculate_regional_pivot(df, districts, selected_period=None, value_column='кол-во', selected_products=None):
     """
     Звіт: Рядки - РЕГІОНИ, Стовпці - ПРЕПАРАТИ (БАДи).
     Додано сортування від більшого до меншого за значенням 'Итого'.
     """
     df = prep_df(df)
     df[value_column] = pd.to_numeric(df[value_column], errors='coerce').fillna(0)
-    
+
+    products_to_use = selected_products if selected_products else SUPPLEMENTS_FOR_MP_BONUS
+
     # 1. Фільтрація за районами та списком БАДів
     mask = (
-        (df['район'].isin(districts)) & 
-        (df['Наименование товаров'].isin(SUPPLEMENTS_FOR_MP_BONUS))
+        (df['район'].isin(districts)) &
+        (df['Наименование товаров'].isin(products_to_use))
     )
     filtered = df[mask].copy()
     
