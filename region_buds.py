@@ -115,8 +115,8 @@ def calculate_regional_pivot(df, districts, selected_period=None, value_column='
         fill_value=0
     )
     
-    # 3. Гарантуємо, що всі 3 препарати є в стовпцях
-    pivot = pivot.reindex(columns=SUPPLEMENTS_FOR_MP_BONUS, fill_value=0)
+    # 3. Гарантуємо, що всі обрані препарати є в стовпцях
+    pivot = pivot.reindex(columns=products_to_use, fill_value=0)
     
     # 4. Додаємо підсумок по рядках (Итого для кожного району)
     pivot['Итого'] = pivot.sum(axis=1)
